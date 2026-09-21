@@ -585,7 +585,7 @@ function addHill(x, z, width, height) {
   g.position.set(x, 0, z);
   scene.add(g);
   hillDetailTargets.push({
-    position: new THREE.Vector3(x, Math.max(0.2, height * 0.12), z),
+    position: new THREE.Vector3(x, 0, z),
     width,
     height,
     base: g
