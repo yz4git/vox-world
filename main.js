@@ -93,17 +93,26 @@ let treeDetailProxy = null;
 let hillDetailProxy = null;
 
 const MAT = {
-  grass: new THREE.MeshLambertMaterial({ color: 0x71965b }),
-  grass2: new THREE.MeshLambertMaterial({ color: 0x88a968 }),
+  grassDark: new THREE.MeshLambertMaterial({ color: 0x45663f }),
+  grass: new THREE.MeshLambertMaterial({ color: 0x66864d }),
+  grass2: new THREE.MeshLambertMaterial({ color: 0x7e9f5b }),
+  grassLight: new THREE.MeshLambertMaterial({ color: 0x96ad68 }),
+  moss: new THREE.MeshLambertMaterial({ color: 0x587747 }),
+  earthDark: new THREE.MeshLambertMaterial({ color: 0x554334 }),
   earth: new THREE.MeshLambertMaterial({ color: 0x725943 }),
-  stone: new THREE.MeshLambertMaterial({ color: 0x626b68 }),
-  stoneDark: new THREE.MeshLambertMaterial({ color: 0x313839 }),
-  stoneLight: new THREE.MeshLambertMaterial({ color: 0x87918b }),
-  wood: new THREE.MeshLambertMaterial({ color: 0x5c3d28 }),
-  woodLight: new THREE.MeshLambertMaterial({ color: 0x876344 }),
+  earthLight: new THREE.MeshLambertMaterial({ color: 0x8c7254 }),
+  stoneDark: new THREE.MeshLambertMaterial({ color: 0x343b3a }),
+  stone: new THREE.MeshLambertMaterial({ color: 0x5f6864 }),
+  stoneMid: new THREE.MeshLambertMaterial({ color: 0x737c76 }),
+  stoneLight: new THREE.MeshLambertMaterial({ color: 0x8e9790 }),
+  stoneWarm: new THREE.MeshLambertMaterial({ color: 0x817868 }),
+  woodDark: new THREE.MeshLambertMaterial({ color: 0x3d2b20 }),
+  wood: new THREE.MeshLambertMaterial({ color: 0x59402b }),
+  woodLight: new THREE.MeshLambertMaterial({ color: 0x76573a }),
+  barkHighlight: new THREE.MeshLambertMaterial({ color: 0x916b43 }),
   waterDry: new THREE.MeshLambertMaterial({ color: 0x826e55 }),
   glow: new THREE.MeshStandardMaterial({ color: 0x94eaff, emissive: 0x4bb9de, emissiveIntensity: 2.2 }),
-  gold: new THREE.MeshStandardMaterial({ color: 0xd7b96f, emissive: 0x5c4514, emissiveIntensity: 0.35 }),
+  gold: new THREE.MeshStandardMaterial({ color: 0xc6a35e, emissive: 0x4b3913, emissiveIntensity: 0.28 }),
   black: new THREE.MeshLambertMaterial({ color: 0x161d1e })
 };
 
@@ -357,45 +366,70 @@ function addThickVoxelBranch(parent, {
   return inst;
 }
 
+function addBlockArch(parent, {
+  x = 0, y = 0, z = 0, width = 4, height = 5, depth = 0.8,
+  block = 0.45, material = MAT.stoneLight
+}) {
+  const half = width * 0.5;
+  for (let yy = block * 0.5; yy < height - width * 0.45; yy += block) {
+    parent.add(box(block, block, depth, material, x - half, y + yy, z));
+    parent.add(box(block, block, depth, material, x + half, y + yy, z));
+  }
+  const radius = half;
+  const steps = Math.max(7, Math.ceil(Math.PI * radius / block));
+  for (let i = 0; i <= steps; i++) {
+    const a = Math.PI * i / steps;
+    const px = x + Math.cos(a) * radius;
+    const py = y + height - width * 0.45 + Math.sin(a) * radius;
+    parent.add(box(block, block, depth, material, px, py, z));
+  }
+}
+
+function addRootFlare(parent, {
+  start = [0, 0.5, 0], direction = [1, -0.18, 0],
+  length = 1.8, radius = 0.46, cell = 0.16, material = MAT.woodDark, seed = 0
+}) {
+  addThickVoxelBranch(parent, {
+    length, cell, radiusStart: radius, radiusEnd: 0.12,
+    material, start, direction, seed
+  });
+}
+
 function createGroundDetail() {
   const root = new THREE.Group();
   root.renderOrder = 2;
 
-  // Keep ground broad and readable. No sandpaper-like micro surface.
   const near = new THREE.Group();
-  const coarseCell = 1.15;
-  for (let iz = -4; iz <= 4; iz++) {
-    for (let ix = -4; ix <= 4; ix++) {
-      const h = ((ix * 17 + iz * 29) % 5) * 0.035;
+  const terrace = 1.45;
+  for (let iz = -3; iz <= 3; iz++) {
+    for (let ix = -3; ix <= 3; ix++) {
+      const band = (Math.floor((ix + 8) / 3) + Math.floor((iz + 8) / 2)) % 4;
+      const mat = [MAT.grassDark, MAT.grass, MAT.grass2, MAT.grass][band];
+      const h = ((ix + iz * 2) % 4 === 0) ? 0.14 : 0.06;
       near.add(box(
-        coarseCell * 0.96,
-        0.11 + h,
-        coarseCell * 0.96,
-        (ix + iz) % 3 === 0 ? MAT.grass2 : MAT.grass,
-        ix * coarseCell,
-        0.04 + h * 0.5,
-        iz * coarseCell
+        terrace * 0.98,
+        0.12 + h,
+        terrace * 0.98,
+        mat,
+        ix * terrace,
+        0.02 + h * 0.5,
+        iz * terrace
       ));
     }
   }
 
+  // Close-range ground detail is still macro: exposed soil shelves and a few mossy caps.
   const micro = new THREE.Group();
-  const detailCell = 0.62;
-  for (let iz = -4; iz <= 4; iz++) {
-    for (let ix = -4; ix <= 4; ix++) {
-      if ((ix + iz * 2) % 3 !== 0) continue;
-      const h = 0.08 + ((ix * 11 + iz * 7) % 4) * 0.04;
-      micro.add(box(
-        detailCell * (1.5 + ((ix + iz) & 1) * 0.45),
-        h,
-        detailCell * (1.4 + ((ix - iz) & 1) * 0.4),
-        (ix + iz) % 2 ? MAT.earth : MAT.grass2,
-        ix * 0.92,
-        0.09 + h * 0.5,
-        iz * 0.92
-      ));
-    }
-  }
+  const patches = [
+    [-2.6,-1.8,2.6,1.4,MAT.earth],
+    [2.1,1.4,2.2,1.25,MAT.earthDark],
+    [-0.4,2.5,1.8,1.0,MAT.grassLight],
+    [3.0,-2.4,1.7,1.3,MAT.moss],
+    [-3.1,2.1,1.55,1.15,MAT.earthLight]
+  ];
+  patches.forEach((p, i) => {
+    micro.add(box(p[2], 0.12 + i * 0.018, p[3], p[4], p[0], 0.15 + i * 0.01, p[1]));
+  });
 
   root.add(near, micro);
   scene.add(root);
@@ -406,99 +440,106 @@ function createTreeDetailProxy() {
   const root = new THREE.Group();
   root.visible = false;
 
-  // MID: same overall mass as FAR, but trunk and crown gain clear volume.
   const mid = new THREE.Group();
   addThickVoxelBranch(mid, {
-    length: 4.6, cell: 0.34, radiusStart: 0.72, radiusEnd: 0.48,
-    material: MAT.wood, start: [0, 0.15, 0], direction: [0, 1, 0], seed: 5
+    length: 4.7, cell: 0.34, radiusStart: 0.78, radiusEnd: 0.5,
+    material: MAT.wood, start: [0, 0.12, 0], direction: [0.025, 1, 0.015], seed: 5
   });
-  addVoxelBlob(mid, { rx: 2.15, ry: 1.35, rz: 1.9, cell: 0.52, material: MAT.grass2, x: -0.65, y: 4.55, z: 0.05, seed: 7, roughness: 0.08 });
-  addVoxelBlob(mid, { rx: 1.9, ry: 1.25, rz: 2.05, cell: 0.5, material: MAT.grass, x: 1.05, y: 4.8, z: -0.2, seed: 9, roughness: 0.1 });
-  addVoxelBlob(mid, { rx: 1.55, ry: 1.0, rz: 1.55, cell: 0.48, material: MAT.grass2, x: 0.1, y: 5.75, z: 0.55, seed: 11, roughness: 0.08 });
+  addRootFlare(mid, { direction:[0.9,-0.2,0.18], length:1.5, radius:0.42, cell:0.24, seed:7 });
+  addRootFlare(mid, { direction:[-0.75,-0.18,0.55], length:1.35, radius:0.38, cell:0.24, seed:9 });
+  addRootFlare(mid, { direction:[0.1,-0.16,-0.92], length:1.25, radius:0.36, cell:0.24, seed:11 });
+  [
+    [-0.9,4.55,0.1,2.0,1.3,1.7,MAT.grassDark],
+    [0.95,4.75,-0.25,1.85,1.25,1.9,MAT.grass],
+    [0.05,5.7,0.55,1.55,1.05,1.5,MAT.grass2]
+  ].forEach((v, i) => addVoxelBlob(mid, {
+    x:v[0], y:v[1], z:v[2], rx:v[3], ry:v[4], rz:v[5],
+    cell:0.5, material:v[6], seed:17+i*5, roughness:0.07, shellOnly:false
+  }));
 
-  // NEAR: thick primary limbs support large, overlapping leaf masses.
   const near = new THREE.Group();
   addThickVoxelBranch(near, {
-    length: 4.8, cell: 0.22, radiusStart: 0.78, radiusEnd: 0.42,
-    material: MAT.woodLight, start: [0, 0.12, 0], direction: [0.01, 1, 0.01], seed: 13
+    length: 4.9, cell: 0.22, radiusStart: 0.82, radiusEnd: 0.44,
+    material: MAT.wood, start: [0, 0.08, 0], direction: [0.025, 1, 0.015], seed: 23
   });
-  addThickVoxelBranch(near, {
-    length: 2.8, cell: 0.2, radiusStart: 0.52, radiusEnd: 0.28,
-    material: MAT.wood, start: [0, 2.65, 0], direction: [-0.8, 0.52, 0.22], seed: 17
-  });
-  addThickVoxelBranch(near, {
-    length: 3.0, cell: 0.2, radiusStart: 0.55, radiusEnd: 0.3,
-    material: MAT.wood, start: [0.05, 2.9, 0], direction: [0.76, 0.56, -0.26], seed: 19
-  });
-  addThickVoxelBranch(near, {
-    length: 2.35, cell: 0.19, radiusStart: 0.44, radiusEnd: 0.24,
-    material: MAT.wood, start: [0, 3.2, 0.05], direction: [0.2, 0.66, 0.72], seed: 23
-  });
-  addThickVoxelBranch(near, {
-    length: 2.1, cell: 0.19, radiusStart: 0.42, radiusEnd: 0.22,
-    material: MAT.wood, start: [-0.12, 3.35, 0], direction: [-0.28, 0.68, -0.68], seed: 29
-  });
-
   [
-    [-1.35,4.5,0.1,1.65,1.05,1.45],
-    [-0.25,5.1,-0.85,1.5,1.0,1.5],
-    [1.15,4.65,-0.55,1.75,1.05,1.5],
-    [1.25,5.45,0.55,1.45,0.95,1.35],
-    [0.0,6.0,0.7,1.35,0.9,1.25],
-    [-1.15,5.35,0.95,1.25,0.85,1.15]
+    [[0,2.6,0],[-0.82,0.5,0.2],3.05,0.58,0.28,MAT.woodDark],
+    [[0.05,2.9,0],[0.76,0.56,-0.28],3.15,0.6,0.3,MAT.wood],
+    [[0,3.15,0],[0.2,0.66,0.72],2.55,0.5,0.24,MAT.wood],
+    [[-0.1,3.4,0],[-0.3,0.7,-0.64],2.3,0.46,0.22,MAT.woodLight]
+  ].forEach((b, i) => addThickVoxelBranch(near, {
+    length:b[2], cell:0.2, radiusStart:b[3], radiusEnd:b[4],
+    material:b[5], start:b[0], direction:b[1], seed:31+i*4
+  }));
+  [
+    [0.02,0.48,0.0,[0.95,-0.18,0.12],1.9,0.52],
+    [0.0,0.46,0.0,[-0.82,-0.17,0.5],1.7,0.48],
+    [0.0,0.44,0.0,[-0.18,-0.16,-0.93],1.55,0.44],
+    [0.0,0.42,0.0,[0.55,-0.14,0.8],1.45,0.4]
+  ].forEach((r, i) => addRootFlare(near, {
+    start:[r[0],r[1],r[2]], direction:r[3], length:r[4], radius:r[5],
+    cell:0.17, material:i%2?MAT.wood:MAT.woodDark, seed:47+i*3
+  }));
+  [
+    [-1.45,4.5,0.2,1.65,1.0,1.45,MAT.grassDark],
+    [-0.35,5.05,-0.95,1.5,0.95,1.5,MAT.grass],
+    [1.15,4.62,-0.65,1.75,1.0,1.48,MAT.grass2],
+    [1.35,5.42,0.55,1.4,0.9,1.28,MAT.grass],
+    [0.08,5.95,0.78,1.32,0.86,1.18,MAT.grassLight],
+    [-1.2,5.35,0.95,1.22,0.8,1.05,MAT.grass2]
   ].forEach((v, i) => addVoxelBlob(near, {
     x:v[0], y:v[1], z:v[2], rx:v[3], ry:v[4], rz:v[5],
-    cell: 0.26, material: i % 2 ? MAT.grass : MAT.grass2,
-    seed: 31 + i * 3, roughness: 0.12
+    cell:0.27, material:v[6], seed:59+i*5, roughness:0.09, shellOnly:false
   }));
 
-  // EXTREME CLOSE: keep the same broad crown, then add secondary structure.
-  // It should feel richer, not thinner.
   const micro = new THREE.Group();
   addThickVoxelBranch(micro, {
-    length: 4.9, cell: 0.13, radiusStart: 0.8, radiusEnd: 0.4,
-    material: MAT.woodLight, start: [0, 0.1, 0], direction: [0.01, 1, 0.01], seed: 41
+    length: 5.0, cell: 0.14, radiusStart: 0.84, radiusEnd: 0.42,
+    material: MAT.wood, start:[0,0.06,0], direction:[0.02,1,0.015], seed:83
   });
-
-  const mainBranches = [
-    [[0,2.55,0],[-0.8,0.5,0.2],3.0,0.56,0.24],
-    [[0.04,2.82,0],[0.76,0.56,-0.28],3.15,0.58,0.25],
-    [[0,3.08,0],[0.24,0.64,0.73],2.55,0.48,0.21],
-    [[-0.12,3.32,0],[-0.3,0.68,-0.66],2.35,0.46,0.2],
-    [[0.16,3.55,-0.04],[0.58,0.7,0.4],2.1,0.42,0.18]
+  const primaries = [
+    [[0,2.55,0],[-0.82,0.5,0.18],3.15,0.6,0.26],
+    [[0.04,2.8,0],[0.76,0.55,-0.3],3.25,0.62,0.27],
+    [[0,3.06,0],[0.22,0.65,0.72],2.65,0.52,0.22],
+    [[-0.12,3.3,0],[-0.32,0.69,-0.64],2.45,0.48,0.21],
+    [[0.15,3.55,-0.04],[0.58,0.7,0.38],2.15,0.43,0.18]
   ];
-  mainBranches.forEach((b, i) => addThickVoxelBranch(micro, {
-    length:b[2], cell:0.12, radiusStart:b[3], radiusEnd:b[4],
-    material:i % 2 ? MAT.woodLight : MAT.wood,
-    start:b[0], direction:b[1], seed:47 + i * 5
+  primaries.forEach((b,i)=>addThickVoxelBranch(micro,{
+    length:b[2],cell:0.13,radiusStart:b[3],radiusEnd:b[4],
+    material:i%2?MAT.woodLight:MAT.woodDark,start:b[0],direction:b[1],seed:91+i*4
   }));
-
-  const secondary = [
-    [[-1.65,3.7,0.4],[-0.62,0.54,0.56],1.45,0.28,0.13],
-    [[-1.3,4.0,0.15],[-0.72,0.48,-0.42],1.3,0.26,0.12],
-    [[1.65,4.0,-0.55],[0.68,0.52,-0.5],1.5,0.3,0.13],
-    [[1.45,4.28,-0.35],[0.4,0.7,0.58],1.25,0.26,0.12],
-    [[0.55,4.45,1.2],[0.2,0.58,0.78],1.2,0.24,0.11]
-  ];
-  secondary.forEach((b, i) => addThickVoxelBranch(micro, {
-    length:b[2], cell:0.095, radiusStart:b[3], radiusEnd:b[4],
-    material:MAT.woodLight, start:b[0], direction:b[1], seed:73 + i
-  }));
-
   [
-    [-1.5,4.45,0.15,1.45,0.92,1.3],
-    [-0.45,4.9,-0.8,1.3,0.95,1.35],
-    [0.75,4.65,-0.9,1.45,0.9,1.25],
-    [1.5,4.55,-0.15,1.35,0.88,1.2],
-    [1.25,5.3,0.65,1.25,0.82,1.1],
-    [0.25,5.85,0.8,1.2,0.82,1.05],
-    [-0.95,5.45,0.95,1.1,0.78,0.95],
-    [-1.55,5.0,-0.65,1.0,0.72,0.92],
-    [0.1,5.25,-1.45,0.95,0.68,0.88]
-  ].forEach((v, i) => addVoxelBlob(micro, {
-    x:v[0], y:v[1], z:v[2], rx:v[3], ry:v[4], rz:v[5],
-    cell: 0.17, material: i % 2 ? MAT.grass : MAT.grass2,
-    seed: 89 + i * 4, roughness: 0.14
+    [[-1.7,3.75,0.42],[-0.6,0.55,0.58],1.4,0.3,0.14],
+    [[-1.35,4.05,0.08],[-0.72,0.5,-0.4],1.3,0.28,0.13],
+    [[1.7,4.0,-0.58],[0.68,0.53,-0.5],1.45,0.3,0.13],
+    [[1.5,4.3,-0.32],[0.42,0.7,0.56],1.25,0.27,0.12],
+    [[0.58,4.48,1.2],[0.18,0.6,0.78],1.15,0.25,0.11]
+  ].forEach((b,i)=>addThickVoxelBranch(micro,{
+    length:b[2],cell:0.1,radiusStart:b[3],radiusEnd:b[4],
+    material:MAT.woodLight,start:b[0],direction:b[1],seed:113+i
+  }));
+  [
+    [[0,0.46,0],[0.95,-0.17,0.12],2.0,0.54],
+    [[0,0.45,0],[-0.82,-0.16,0.5],1.85,0.5],
+    [[0,0.44,0],[-0.18,-0.15,-0.93],1.7,0.47],
+    [[0,0.42,0],[0.58,-0.14,0.79],1.55,0.43]
+  ].forEach((r,i)=>addRootFlare(micro,{
+    start:r[0],direction:r[1],length:r[2],radius:r[3],cell:0.12,
+    material:i%2?MAT.wood:MAT.woodDark,seed:127+i*2
+  }));
+  [
+    [-1.55,4.45,0.15,1.4,0.88,1.25,MAT.grassDark],
+    [-0.55,4.9,-0.92,1.28,0.9,1.3,MAT.grass],
+    [0.65,4.65,-1.0,1.38,0.84,1.22,MAT.grass2],
+    [1.5,4.55,-0.18,1.3,0.84,1.15,MAT.grassDark],
+    [1.28,5.28,0.65,1.2,0.78,1.03,MAT.grass],
+    [0.28,5.85,0.82,1.16,0.78,1.0,MAT.grassLight],
+    [-0.95,5.42,0.98,1.06,0.72,0.92,MAT.grass2],
+    [-1.48,5.0,-0.62,0.96,0.68,0.88,MAT.grass],
+    [0.08,5.25,-1.42,0.92,0.65,0.84,MAT.grassDark]
+  ].forEach((v,i)=>addVoxelBlob(micro,{
+    x:v[0],y:v[1],z:v[2],rx:v[3],ry:v[4],rz:v[5],
+    cell:0.19,material:v[6],seed:139+i*3,roughness:0.1,shellOnly:false
   }));
 
   root.add(mid, near, micro);
@@ -510,44 +551,38 @@ function createHillDetailProxy() {
   const root = new THREE.Group();
   root.visible = false;
 
-  // MID: the simple stepped silhouette becomes a cluster of larger rock masses.
   const mid = new THREE.Group();
-  addVoxelBlob(mid, { rx: 4.6, ry: 2.2, rz: 3.55, cell: 0.72, material: MAT.stone, y: 2.2, seed: 79, roughness: 0.16 });
-  addVoxelBlob(mid, { rx: 2.45, ry: 1.45, rz: 2.0, cell: 0.62, material: MAT.stoneLight, x: -1.5, y: 4.0, z: 0.4, seed: 83, roughness: 0.18 });
-  addVoxelBlob(mid, { rx: 1.9, ry: 1.1, rz: 1.55, cell: 0.58, material: MAT.stoneDark, x: 1.8, y: 3.45, z: -0.55, seed: 89, roughness: 0.2 });
+  addVoxelBlob(mid, { rx:4.7, ry:2.3, rz:3.7, cell:0.78, material:MAT.stone, y:2.25, seed:151, roughness:0.08 });
+  addVoxelBlob(mid, { rx:2.8, ry:1.5, rz:2.2, cell:0.7, material:MAT.stoneMid, x:-1.4, y:4.05, z:0.35, seed:157, roughness:0.08 });
+  mid.add(box(5.8,0.45,2.4,MAT.stoneLight,-1.5,3.0,1.55));
+  mid.add(box(3.8,0.35,2.2,MAT.moss,1.8,4.45,-0.9));
 
-  // NEAR: ledges, overhangs and split ridges change the silhouette further.
   const near = new THREE.Group();
-  addVoxelBlob(near, { rx: 4.7, ry: 2.3, rz: 3.65, cell: 0.42, material: MAT.stone, y: 2.35, seed: 83, roughness: 0.28 });
-  addVoxelBlob(near, { rx: 2.8, ry: 1.6, rz: 2.45, cell: 0.36, material: MAT.stoneLight, x: -1.55, y: 4.15, z: 0.45, seed: 89, roughness: 0.35 });
-  addVoxelBlob(near, { rx: 2.25, ry: 1.25, rz: 1.9, cell: 0.34, material: MAT.stoneDark, x: 1.7, y: 3.8, z: -0.7, seed: 97, roughness: 0.32 });
-  near.add(box(2.2, 0.42, 1.35, MAT.stoneLight, -3.9, 2.25, 1.1));
-  near.add(box(1.45, 0.35, 2.0, MAT.stone, 3.75, 1.8, -0.8));
-  near.add(box(1.2, 1.15, 0.9, MAT.stoneDark, -2.9, 4.55, -1.5));
+  addVoxelBlob(near, { rx:4.8, ry:2.35, rz:3.75, cell:0.46, material:MAT.stone, y:2.3, seed:163, roughness:0.12 });
+  addVoxelBlob(near, { rx:2.9, ry:1.55, rz:2.35, cell:0.42, material:MAT.stoneMid, x:-1.55, y:4.15, z:0.4, seed:167, roughness:0.12 });
+  addVoxelBlob(near, { rx:2.15, ry:1.25, rz:1.75, cell:0.4, material:MAT.stoneDark, x:1.9, y:3.75, z:-0.65, seed:173, roughness:0.1 });
+  near.add(box(6.2,0.5,2.55,MAT.stoneLight,-1.45,2.75,1.65));
+  near.add(box(3.4,0.42,1.9,MAT.stoneWarm,2.9,2.05,-1.6));
+  near.add(box(4.0,0.32,2.1,MAT.moss,-1.1,5.25,0.4));
+  near.add(box(2.4,0.28,1.5,MAT.grassDark,2.4,4.25,-0.6));
 
-  // EXTREME CLOSE: broken ridges, small outcrops and notches.
   const micro = new THREE.Group();
-  addVoxelBlob(micro, { rx: 4.8, ry: 2.35, rz: 3.75, cell: 0.22, material: MAT.stone, y: 2.35, seed: 101, roughness: 0.42 });
+  addVoxelBlob(micro, { rx:4.85, ry:2.4, rz:3.8, cell:0.28, material:MAT.stone, y:2.3, seed:179, roughness:0.14 });
+  addVoxelBlob(micro, { rx:2.9, ry:1.6, rz:2.35, cell:0.26, material:MAT.stoneMid, x:-1.6, y:4.18, z:0.4, seed:181, roughness:0.14 });
+  addVoxelBlob(micro, { rx:2.2, ry:1.3, rz:1.8, cell:0.25, material:MAT.stoneDark, x:1.9, y:3.82, z:-0.68, seed:191, roughness:0.13 });
   [
-    [-2.6,3.9,0.5,2.1,1.45,2.0,107],
-    [-0.7,4.8,-0.75,1.8,1.25,1.65,109],
-    [1.45,4.25,-0.9,1.95,1.35,1.7,113],
-    [2.85,3.15,0.8,1.55,1.05,1.4,127],
-    [-3.35,2.55,-1.0,1.2,0.9,1.45,131],
-    [0.2,5.65,0.25,0.9,0.75,0.8,137]
-  ].forEach((v, i) => addVoxelBlob(micro, {
-    x:v[0], y:v[1], z:v[2], rx:v[3], ry:v[4], rz:v[5],
-    cell: 0.18, material: i % 3 === 0 ? MAT.stoneLight : (i % 3 === 1 ? MAT.stoneDark : MAT.stone),
-    seed:v[6], roughness:0.48
-  }));
-
-  for (let i = 0; i < 22; i++) {
-    const side = i % 2 ? -1 : 1;
-    const px = side * (2.9 + (i % 5) * 0.38);
-    const py = 0.9 + (i % 6) * 0.58;
-    const pz = -2.5 + (i % 7) * 0.68;
-    micro.add(box(0.38, 0.3 + (i % 3) * 0.08, 0.46, i % 3 ? MAT.stone : MAT.stoneLight, px, py, pz));
+    [-3.85,1.85,1.2,2.25,0.38,1.5,MAT.stoneLight],
+    [-2.15,3.2,1.8,3.2,0.32,1.35,MAT.stoneWarm],
+    [0.2,4.85,0.55,3.4,0.3,1.65,MAT.stoneLight],
+    [2.95,2.55,-1.55,2.1,0.34,1.5,MAT.stoneWarm],
+    [1.1,5.45,-0.4,2.7,0.26,1.25,MAT.moss]
+  ].forEach(p=>micro.add(box(p[3],p[4],p[5],p[6],p[0],p[1],p[2])));
+  for (let i=0;i<9;i++) {
+    const x=-3.6+i*0.9;
+    micro.add(box(0.42,0.75+(i%3)*0.22,0.6,i%2?MAT.stoneDark:MAT.stoneMid,x,1.25+(i%4)*0.38,-3.55+(i%2)*0.25));
   }
+  micro.add(box(3.1,0.24,1.6,MAT.grassDark,-1.2,5.62,0.5));
+  micro.add(box(1.8,0.22,1.15,MAT.moss,2.25,4.42,-0.6));
 
   root.add(mid, near, micro);
   scene.add(root);
@@ -638,26 +673,36 @@ function addGround() {
   ground.receiveShadow = true;
   scene.add(ground);
 
-  const tileGeo = new THREE.BoxGeometry(2.4, 0.28, 2.4);
-  const tileMat = MAT.grass2;
-  const count = isCoarsePointer ? 180 : 300;
-  const inst = new THREE.InstancedMesh(tileGeo, tileMat, count);
-  const dummy = new THREE.Object3D();
-  let placed = 0;
-  for (let i = 0; i < count * 2 && placed < count; i++) {
-    const x = (Math.random() - 0.5) * 145;
-    const z = 28 - Math.random() * 165;
-    if (Math.abs(x) < 5 && z > -82) continue;
-    dummy.position.set(x, -0.02 + Math.random() * 0.05, z);
-    dummy.rotation.y = Math.floor(Math.random() * 4) * Math.PI / 2;
-    const s = 0.55 + Math.random() * 0.8;
-    dummy.scale.set(s, 1, s);
-    dummy.updateMatrix();
-    inst.setMatrixAt(placed++, dummy.matrix);
+  // Large grouped patches: terrain reads as fields and shelves, not random speckles.
+  const patchAnchors = [
+    [-28,2,MAT.grassDark],[-42,-30,MAT.grass2],[26,-22,MAT.grassLight],
+    [38,-58,MAT.earth],[-24,-72,MAT.earthDark],[24,-96,MAT.grassDark],
+    [-44,-118,MAT.stoneWarm],[44,-132,MAT.moss]
+  ];
+  patchAnchors.forEach((a, ai) => {
+    const [ax,az,mat] = a;
+    const count = 5 + (ai % 3);
+    for (let i=0;i<count;i++) {
+      const ang = (i/count)*Math.PI*2 + ai*0.37;
+      const radius = 2.0 + (i%3)*1.5;
+      const w = 4.2 + (i%3)*1.4;
+      const d = 3.6 + ((i+1)%3)*1.25;
+      const x = ax + Math.cos(ang)*radius;
+      const z = az + Math.sin(ang)*radius;
+      const h = 0.12 + (i%2)*0.08;
+      scene.add(box(w,h,d,mat,x,0.03+h*0.5,z));
+    }
+  });
+
+  // Broad path plates retain a clear exploration flow.
+  const pathMat = new THREE.MeshLambertMaterial({ color: 0x958166 });
+  for (let i = 0; i < 23; i++) {
+    const z = 18 - i * 4.1;
+    const x = Math.sin(i * 0.6) * 2.5;
+    const p = box(3.8 + (i%3)*0.55, 0.14, 3.3 + (i%2)*0.5, pathMat, x, 0.07, z);
+    p.rotation.y = Math.sin(i) * 0.13;
+    scene.add(p);
   }
-  inst.count = placed;
-  inst.receiveShadow = true;
-  scene.add(inst);
 
   addHill(-48, -102, 26, 16);
   addHill(42, -118, 34, 22);
@@ -666,31 +711,27 @@ function addGround() {
 
   for (let i = 0; i < 38; i++) {
     const side = i % 2 === 0 ? -1 : 1;
-    const x = side * (14 + Math.random() * 50);
-    const z = 12 - Math.random() * 145;
-    addTree(x, z, 0.7 + Math.random() * 1.5);
-  }
-
-  const pathMat = new THREE.MeshLambertMaterial({ color: 0x9b8b69 });
-  for (let i = 0; i < 23; i++) {
-    const z = 18 - i * 4.1;
-    const x = Math.sin(i * 0.6) * 2.5;
-    const p = box(3.2 + Math.random() * 1.4, 0.12, 3.0, pathMat, x, 0.06, z);
-    p.rotation.y = Math.sin(i) * 0.13;
-    scene.add(p);
+    const x = side * (14 + ((i * 17) % 50));
+    const z = 12 - ((i * 29) % 145);
+    addTree(x, z, 0.78 + ((i * 13) % 15) / 10);
   }
 }
 
 function addHill(x, z, width, height) {
   const g = new THREE.Group();
-  const levels = 5;
+  const levels = 6;
   for (let i = 0; i < levels; i++) {
-    const w = width * (1 - i * 0.14);
+    const t = i / (levels - 1);
+    const w = width * (1 - t * 0.46);
+    const d = width * 0.82 * (1 - t * 0.38);
     const h = height / levels;
-    const b = box(w, h + 0.4, w * 0.82, i > 3 ? MAT.stoneLight : MAT.stone, 0, i * h * 0.68, 0);
-    b.position.x += (i % 2 ? 1 : -1) * width * 0.035;
+    const mat = i < 2 ? MAT.stoneDark : (i < 4 ? MAT.stone : MAT.stoneMid);
+    const b = box(w, h + 0.35, d, mat, 0, i * h * 0.72, 0);
+    b.position.x += Math.sin(i * 1.7) * width * 0.055;
+    b.position.z += Math.cos(i * 1.25) * width * 0.035;
     g.add(b);
   }
+  g.add(box(width*0.46,0.32,width*0.36,MAT.moss,-width*0.09,height*0.61,width*0.05));
   g.position.set(x, 0, z);
   scene.add(g);
   hillDetailTargets.push({
@@ -703,9 +744,17 @@ function addHill(x, z, width, height) {
 
 function addTree(x, z, scale = 1) {
   const g = new THREE.Group();
-  g.add(box(0.8 * scale, 4 * scale, 0.8 * scale, MAT.wood, 0, 2 * scale, 0));
-  g.add(box(4.2 * scale, 2.2 * scale, 3.6 * scale, MAT.grass2, 0, 4.4 * scale, 0));
-  g.add(box(2.7 * scale, 2.1 * scale, 4.5 * scale, MAT.grass, 0.8 * scale, 5.2 * scale, 0));
+  // FAR silhouette: still simple, but already weighted like a real custom tree.
+  g.add(box(1.05 * scale, 4.4 * scale, 1.05 * scale, MAT.woodDark, 0, 2.2 * scale, 0));
+  g.add(box(4.8 * scale, 2.4 * scale, 4.0 * scale, MAT.grassDark, -0.45 * scale, 4.55 * scale, 0));
+  g.add(box(3.8 * scale, 2.5 * scale, 4.6 * scale, MAT.grass, 1.0 * scale, 4.95 * scale, -0.25 * scale));
+  g.add(box(3.0 * scale, 2.1 * scale, 3.4 * scale, MAT.grass2, 0.1 * scale, 5.95 * scale, 0.65 * scale));
+  // Two coarse root flares keep the base from looking like a pole.
+  const r1 = box(1.65*scale,0.55*scale,0.8*scale,MAT.wood,-0.55*scale,0.3*scale,0.2*scale);
+  r1.rotation.z = -0.22;
+  const r2 = box(1.45*scale,0.5*scale,0.75*scale,MAT.wood,0.6*scale,0.28*scale,-0.25*scale);
+  r2.rotation.z = 0.2;
+  g.add(r1,r2);
   g.position.set(x, 0, z);
   scene.add(g);
   treeDetailTargets.push({
@@ -802,16 +851,14 @@ function makeTower() {
     near.add(box(1.5, 2.8, 1.5, MAT.stoneDark, side * 6.1, 13.0, -1.7));
   }
 
-  // LOD1: fine surface voxels appear on the lower facade as the player approaches.
-  // Instancing keeps this dense layer cheap enough for mobile.
-  addVoxelPanel(near, {
-    width: 9.6, height: 7.0, cell: 0.12, depth: 0.085,
-    x: 0, y: 4.0, z: 6.96, material: MAT.stoneLight, seed: 2
-  });
-  addVoxelPanel(near, {
-    width: 7.4, height: 5.0, cell: 0.105, depth: 0.075,
-    x: 0, y: 11.0, z: 5.58, material: MAT.stone, seed: 5
-  });
+  // NEAR: use real depth and grouped forms instead of surface noise.
+  addBlockArch(near, { x:0, y:1.2, z:7.36, width:4.1, height:4.8, depth:0.75, block:0.46, material:MAT.stoneLight });
+  for (const side of [-1,1]) {
+    near.add(box(0.72,5.6,0.9,MAT.stoneMid,side*3.65,4.2,7.0));
+    near.add(box(1.15,0.75,1.0,MAT.stoneWarm,side*3.65,7.05,7.0));
+  }
+  near.add(box(7.8,0.55,1.0,MAT.stoneLight,0,8.3,6.15));
+  near.add(box(5.6,0.42,0.85,MAT.moss,0,8.72,6.18));
   addLevel(root, 1, near);
 
   const micro = near.clone();
@@ -833,26 +880,24 @@ function makeTower() {
   micro.add(box(0.55, 5.8, 0.55, MAT.black, 2.2, 42.0, -0.8));
   micro.add(box(0.38, 3.8, 0.38, MAT.black, 3.0, 44.2, -0.4));
 
-  // LOD0: the door surround resolves into thousands of tiny voxels.
-  addVoxelPanel(micro, {
-    width: 5.8, height: 6.0, cell: 0.032, depth: 0.025,
-    x: 0, y: 3.4, z: 7.16, material: MAT.stoneLight, seed: 11
-  });
-  addVoxelPanel(micro, {
-    width: 4.7, height: 1.15, cell: 0.024, depth: 0.019,
-    x: 0, y: 6.75, z: 7.22, material: MAT.gold, seed: 19
-  });
-  for (let i = -5; i <= 5; i++) {
-    addMicroGlyph(micro, i * 0.37, 6.72 + (i % 2) * 0.08, 7.27, i === 0 ? MAT.glow : MAT.gold, 0.78);
+  // EXTREME CLOSE: architectural greeble in coherent groups, not pixel-noise.
+  for (let i=0;i<7;i++) {
+    const x=-3.0+i*1.0;
+    micro.add(box(0.48,0.72+(i%2)*0.22,0.62,i%3===0?MAT.stoneWarm:MAT.stoneLight,x,9.35,6.2));
   }
-
+  for (const side of [-1,1]) {
+    micro.add(box(1.0,2.8,1.15,MAT.stoneMid,side*4.55,10.15,5.15));
+    micro.add(box(1.45,0.34,1.45,MAT.moss,side*4.55,11.58,5.15));
+    micro.add(box(0.42,1.8,0.52,MAT.gold,side*2.25,5.5,7.5));
+  }
+  micro.add(box(3.2,0.36,0.62,MAT.gold,0,6.95,7.48));
+  micro.add(box(2.7,0.22,0.7,MAT.moss,0,7.32,7.4));
   const trim = new THREE.Group();
-  for (let i = 0; i < 24; i++) {
-    const angle = i / 24 * Math.PI * 2;
-    const x = Math.cos(angle) * 6.1;
-    const z = Math.sin(angle) * 6.1;
-    const rune = box(0.28, 0.28, 0.55, MAT.gold, x, 4.4 + (i % 3) * 0.32, z);
-    rune.rotation.y = -angle;
+  for (let i=0;i<16;i++) {
+    const angle=i/16*Math.PI*2;
+    const r=6.0;
+    const rune=box(0.34,0.34,0.52,i%4===0?MAT.gold:MAT.stoneWarm,Math.cos(angle)*r,4.55+(i%2)*0.34,Math.sin(angle)*r);
+    rune.rotation.y=-angle;
     trim.add(rune);
   }
   micro.add(trim);
@@ -920,8 +965,8 @@ function makeFallenTree() {
     near.add(box(0.22, 0.08, 1.54, MAT.woodLight, i * 0.52, 1.72, 0));
   }
 
-  addVoxelBranch(near, { length: 2.1, cell: 0.13, material: MAT.wood, start:[1.4,1.18,0], direction:[0.36,0.48,0.8], taper:0.9, seed:143 });
-  addVoxelBranch(near, { length: 1.65, cell: 0.12, material: MAT.wood, start:[-1.8,1.08,0], direction:[-0.3,0.5,-0.82], taper:0.92, seed:149 });
+  addThickVoxelBranch(near, { length:2.1, cell:0.18, radiusStart:0.42, radiusEnd:0.18, material:MAT.wood, start:[1.4,1.18,0], direction:[0.36,0.48,0.8], seed:143 });
+  addThickVoxelBranch(near, { length:1.65, cell:0.17, radiusStart:0.36, radiusEnd:0.16, material:MAT.woodDark, start:[-1.8,1.08,0], direction:[-0.3,0.5,-0.82], seed:149 });
   addVoxelPanel(near, {
     width: 6.9, height: 1.16, cell: 0.095, depth: 0.065,
     x: -0.4, y: 1.12, z: 0.78, material: MAT.woodLight, seed: 7
@@ -929,8 +974,8 @@ function makeFallenTree() {
   addLevel(root, 1, near);
 
   const micro = near.clone();
-  addVoxelBranch(micro, { length: 1.35, cell: 0.048, material: MAT.woodLight, start:[2.45,1.58,0.55], direction:[0.6,0.5,0.55], taper:0.96, seed:151 });
-  addVoxelBranch(micro, { length: 1.1, cell: 0.045, material: MAT.woodLight, start:[-2.55,1.42,-0.45], direction:[-0.65,0.46,-0.52], taper:0.96, seed:157 });
+  addThickVoxelBranch(micro, { length:1.35, cell:0.11, radiusStart:0.24, radiusEnd:0.1, material:MAT.woodLight, start:[2.45,1.58,0.55], direction:[0.6,0.5,0.55], seed:151 });
+  addThickVoxelBranch(micro, { length:1.1, cell:0.1, radiusStart:0.22, radiusEnd:0.09, material:MAT.woodLight, start:[-2.55,1.42,-0.45], direction:[-0.65,0.46,-0.52], seed:157 });
   addVoxelPanel(micro, {
     width: 2.9, height: 0.9, cell: 0.028, depth: 0.024,
     x: -0.72, y: 1.47, z: 0.84, material: MAT.woodLight, seed: 17
