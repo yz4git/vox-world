@@ -116,6 +116,75 @@ function cylinder(r, h, mat, segments = 8) {
   return mesh;
 }
 
+function addVoxelPanel(parent, {
+  width,
+  height,
+  cell,
+  depth = cell * 0.72,
+  x = 0,
+  y = 0,
+  z = 0,
+  material = MAT.stone,
+  axis = "z",
+  inset = 0,
+  seed = 0
+}) {
+  const cols = Math.max(1, Math.floor(width / cell));
+  const rows = Math.max(1, Math.floor(height / cell));
+  const count = cols * rows;
+  const geometry = axis === "y"
+    ? new THREE.BoxGeometry(cell * 0.92, depth, cell * 0.92)
+    : axis === "x"
+      ? new THREE.BoxGeometry(depth, cell * 0.92, cell * 0.92)
+      : new THREE.BoxGeometry(cell * 0.92, cell * 0.92, depth);
+  const inst = new THREE.InstancedMesh(geometry, material, count);
+  const dummy = new THREE.Object3D();
+  let n = 0;
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const u = (col + 0.5) / cols - 0.5;
+      const v = (row + 0.5) / rows - 0.5;
+      const noise = Math.sin((col + seed * 13.1) * 1.713 + (row + seed * 7.7) * 2.137) * cell * 0.12;
+
+      if (axis === "y") {
+        dummy.position.set(x + u * width, y + noise - inset, z + v * height);
+      } else if (axis === "x") {
+        dummy.position.set(x + noise - inset, y + v * height, z + u * width);
+      } else {
+        dummy.position.set(x + u * width, y + v * height, z + noise - inset);
+      }
+
+      const scaleNoise = 0.9 + ((col * 17 + row * 31 + seed * 11) % 7) * 0.018;
+      dummy.scale.setScalar(scaleNoise);
+      dummy.updateMatrix();
+      inst.setMatrixAt(n++, dummy.matrix);
+    }
+  }
+
+  inst.castShadow = false;
+  inst.receiveShadow = true;
+  inst.frustumCulled = true;
+  parent.add(inst);
+  return inst;
+}
+
+function addMicroGlyph(parent, x, y, z, material = MAT.glow, scale = 1) {
+  const pattern = [
+    [0,0],[1,0],[2,0],
+    [0,1],[2,1],
+    [1,2],
+    [1,3]
+  ];
+  const cell = 0.035 * scale;
+  for (const [gx, gy] of pattern) {
+    parent.add(box(cell, cell, cell * 0.55, material,
+      x + (gx - 1) * cell * 1.08,
+      y + (1.5 - gy) * cell * 1.08,
+      z));
+  }
+}
+
 function addGround() {
   const ground = box(220, 1, 240, MAT.grass, 0, -0.55, -70);
   ground.receiveShadow = true;
@@ -241,9 +310,34 @@ function makeTower() {
   near.add(box(8, 8, 8, MAT.black, 0, 30, 0));
   near.add(box(2, 12, 2, MAT.black, -1.3, 39, 0));
   near.add(box(1.1, 1.1, 1.1, MAT.glow, -1.3, 46, 0));
+
+  // LOD1: fine surface voxels appear on the lower facade as the player approaches.
+  // Instancing keeps this dense layer cheap enough for mobile.
+  addVoxelPanel(near, {
+    width: 9.6, height: 7.0, cell: 0.22, depth: 0.16,
+    x: 0, y: 4.0, z: 6.96, material: MAT.stoneLight, seed: 2
+  });
+  addVoxelPanel(near, {
+    width: 7.4, height: 5.0, cell: 0.18, depth: 0.13,
+    x: 0, y: 11.0, z: 5.58, material: MAT.stone, seed: 5
+  });
   addLevel(root, 1, near);
 
   const micro = near.clone();
+
+  // LOD0: the door surround resolves into thousands of tiny voxels.
+  addVoxelPanel(micro, {
+    width: 5.8, height: 6.0, cell: 0.065, depth: 0.052,
+    x: 0, y: 3.4, z: 7.16, material: MAT.stoneLight, seed: 11
+  });
+  addVoxelPanel(micro, {
+    width: 4.7, height: 1.15, cell: 0.045, depth: 0.04,
+    x: 0, y: 6.75, z: 7.22, material: MAT.gold, seed: 19
+  });
+  for (let i = -5; i <= 5; i++) {
+    addMicroGlyph(micro, i * 0.37, 6.72 + (i % 2) * 0.08, 7.27, i === 0 ? MAT.glow : MAT.gold, 0.78);
+  }
+
   const trim = new THREE.Group();
   for (let i = 0; i < 24; i++) {
     const angle = i / 24 * Math.PI * 2;
@@ -317,16 +411,32 @@ function makeFallenTree() {
   for (let i = -7; i < 7; i++) {
     near.add(box(0.22, 0.08, 1.54, MAT.woodLight, i * 0.52, 1.72, 0));
   }
+  addVoxelPanel(near, {
+    width: 6.9, height: 1.16, cell: 0.095, depth: 0.065,
+    x: -0.4, y: 1.12, z: 0.78, material: MAT.woodLight, seed: 7
+  });
   addLevel(root, 1, near);
 
   const micro = near.clone();
+  addVoxelPanel(micro, {
+    width: 2.9, height: 0.9, cell: 0.028, depth: 0.024,
+    x: -0.72, y: 1.47, z: 0.84, material: MAT.woodLight, seed: 17
+  });
   for (let i = 0; i < 3; i++) {
-    const scar = box(0.13, 0.48, 0.05, MAT.black, -1.1 + i * 0.32, 1.78, 0.79);
-    scar.rotation.z = -0.55;
-    micro.add(scar);
+    for (let j = 0; j < 7; j++) {
+      const scar = box(0.035, 0.055, 0.026, MAT.black,
+        -1.08 + i * 0.32 - j * 0.035,
+        1.58 + j * 0.07,
+        0.868);
+      micro.add(scar);
+    }
   }
-  const lastMark = box(0.8, 0.18, 0.08, MAT.glow, -0.78, 1.32, 0.8);
-  micro.add(lastMark);
+  for (let i = 0; i < 12; i++) {
+    micro.add(box(0.038, 0.038, 0.025, i < 4 ? MAT.glow : MAT.gold,
+      -1.22 + i * 0.075,
+      1.27 + Math.sin(i * 1.8) * 0.045,
+      0.87));
+  }
   addLevel(root, 0, micro);
 
   addInteractable({
@@ -357,12 +467,24 @@ function makeStatue() {
   near.add(box(1.0, 0.6, 0.8, MAT.stoneLight, 3.7, 4.0, 0));
   near.add(box(0.22, 0.22, 0.12, MAT.black, -0.35, 5.55, 0.88));
   near.add(box(0.22, 0.22, 0.12, MAT.black, 0.35, 5.55, 0.88));
+  addVoxelPanel(near, {
+    width: 2.05, height: 2.65, cell: 0.105, depth: 0.075,
+    x: 0, y: 5.0, z: 0.91, material: MAT.stoneLight, seed: 3
+  });
+  addVoxelPanel(near, {
+    width: 1.0, height: 0.62, cell: 0.07, depth: 0.05,
+    x: 3.7, y: 4.0, z: 0.46, material: MAT.stoneLight, seed: 8
+  });
   addLevel(root, 1, near);
 
   const micro = near.clone();
-  for (let i = 0; i < 4; i++) {
-    const mark = box(0.13, 0.5 - i * 0.05, 0.05, i === 0 ? MAT.glow : MAT.gold, 3.7 + (i - 1.5) * 0.22, 4.0 + Math.sin(i) * 0.2, 0.43);
-    micro.add(mark);
+  addVoxelPanel(micro, {
+    width: 0.86, height: 0.56, cell: 0.025, depth: 0.022,
+    x: 3.7, y: 4.0, z: 0.49, material: MAT.stoneLight, seed: 15
+  });
+  for (let i = 0; i < 5; i++) {
+    addMicroGlyph(micro, 3.42 + i * 0.14, 4.03 + Math.sin(i * 1.6) * 0.055, 0.515,
+      i === 1 ? MAT.glow : MAT.gold, 0.48);
   }
   addLevel(root, 0, micro);
 
@@ -394,17 +516,30 @@ function makeSpring() {
   addLevel(root, 2, mid);
 
   const near = mid.clone();
-  const disk = cylinder(1.0, 0.18, MAT.stoneDark, 16);
+  const disk = cylinder(1.0, 0.18, MAT.stoneDark, 24);
   disk.position.y = 0.2;
   near.add(disk);
+  addVoxelPanel(near, {
+    width: 1.72, height: 1.72, cell: 0.085, depth: 0.055,
+    x: 0, y: 0.31, z: 0, material: MAT.stoneLight, axis: "y", seed: 6
+  });
   addLevel(root, 1, near);
 
   const micro = near.clone();
-  for (let i = 0; i < 8; i++) {
-    const a = i / 8 * Math.PI * 2;
-    const rune = box(0.28, 0.08, 0.12, i === 0 ? MAT.glow : MAT.gold, Math.cos(a) * 0.72, 0.35, Math.sin(a) * 0.72);
+  addVoxelPanel(micro, {
+    width: 1.45, height: 1.45, cell: 0.026, depth: 0.022,
+    x: 0, y: 0.35, z: 0, material: MAT.stoneLight, axis: "y", seed: 14
+  });
+  for (let i = 0; i < 24; i++) {
+    const a = i / 24 * Math.PI * 2;
+    const rune = box(0.052, 0.028, 0.052, i < 3 ? MAT.glow : MAT.gold,
+      Math.cos(a) * 0.69, 0.392, Math.sin(a) * 0.69);
     rune.rotation.y = -a;
     micro.add(rune);
+  }
+  for (let i = 0; i < 7; i++) {
+    const a = i / 7 * Math.PI * 2;
+    addMicroGlyph(micro, Math.cos(a) * 0.38, 0.41, Math.sin(a) * 0.38, i === 0 ? MAT.glow : MAT.gold, 0.38);
   }
   addLevel(root, 0, micro);
 
@@ -583,9 +718,9 @@ function updateObjective() {
 function updateLOD(root, distance) {
   let level = 3;
   if (distance <= 80) level = 2;
-  if (distance <= 20) level = 1;
-  if (distance <= 2.2) level = 0;
-  if (lensActive && lensOwned && distance <= 5.0) level = 0;
+  if (distance <= 24) level = 1;
+  if (distance <= 2.8) level = 0;
+  if (lensActive && lensOwned && distance <= 6.0) level = 0;
   for (const child of root.userData.levels) {
     child.visible = child.userData.lodLevel === level;
   }
@@ -594,8 +729,8 @@ function updateLOD(root, distance) {
 function updateWorldLOD() {
   const d = player.distanceTo(new THREE.Vector3(towerPos.x, player.y, towerPos.z));
   previousLod = lodLevel;
-  lodLevel = d > 80 ? 3 : d > 20 ? 2 : d > 2.2 ? 1 : 0;
-  const names = ["LOD0 · MICRO 1cm", "LOD1 · NEAR 10cm", "LOD2 · MID ~1m", "LOD3 · FAR 2–8m"];
+  lodLevel = d > 80 ? 3 : d > 24 ? 2 : d > 2.8 ? 1 : 0;
+  const names = ["LOD0 · MICRO ~5mm", "LOD1 · NEAR ~5cm", "LOD2 · MID ~1m", "LOD3 · FAR 2–8m"];
   lodBadge.textContent = names[lodLevel];
   if (previousLod !== lodLevel) {
     lodBadge.classList.remove("lodFlash");
