@@ -336,35 +336,44 @@ function createTreeDetailProxy() {
   const root = new THREE.Group();
   root.visible = false;
 
-  // LOD1 is a new shape, not a subdivided copy: trunk taper, primary branches,
-  // and several separate canopy masses change the silhouette.
+  // MID: still blocky, but the single canopy becomes multiple masses and
+  // the trunk starts to taper. This is the first silhouette change.
+  const mid = new THREE.Group();
+  addVoxelBranch(mid, {
+    length: 4.25, cell: 0.34, material: MAT.wood,
+    start: [0, 0.12, 0], direction: [0.015, 1, 0.01], taper: 0.45, seed: 5
+  });
+  addVoxelBlob(mid, { rx: 1.85, ry: 1.05, rz: 1.55, cell: 0.52, material: MAT.grass2, x: -0.55, y: 4.45, z: 0.05, seed: 7, roughness: 0.12 });
+  addVoxelBlob(mid, { rx: 1.55, ry: 1.0, rz: 1.65, cell: 0.5, material: MAT.grass, x: 0.95, y: 4.72, z: -0.2, seed: 9, roughness: 0.14 });
+  addVoxelBlob(mid, { rx: 1.05, ry: 0.82, rz: 1.1, cell: 0.46, material: MAT.grass2, x: 0.15, y: 5.55, z: 0.55, seed: 11, roughness: 0.13 });
+
+  // NEAR: primary branches and layered canopy masses appear.
   const near = new THREE.Group();
   addVoxelBranch(near, {
     length: 4.4, cell: 0.16, material: MAT.woodLight,
-    start: [0, 0.12, 0], direction: [0.03, 1, 0.02], taper: 0.62, seed: 11
+    start: [0, 0.12, 0], direction: [0.03, 1, 0.02], taper: 0.62, seed: 13
   });
   addVoxelBranch(near, {
     length: 2.35, cell: 0.17, material: MAT.wood,
-    start: [0, 2.85, 0], direction: [-0.78, 0.52, 0.18], taper: 0.78, seed: 13
+    start: [0, 2.85, 0], direction: [-0.78, 0.52, 0.18], taper: 0.78, seed: 17
   });
   addVoxelBranch(near, {
     length: 2.65, cell: 0.17, material: MAT.wood,
-    start: [0.06, 3.15, 0], direction: [0.72, 0.58, -0.28], taper: 0.8, seed: 17
+    start: [0.06, 3.15, 0], direction: [0.72, 0.58, -0.28], taper: 0.8, seed: 19
   });
   addVoxelBranch(near, {
     length: 1.85, cell: 0.16, material: MAT.wood,
-    start: [0, 3.42, 0], direction: [0.18, 0.68, 0.7], taper: 0.85, seed: 19
+    start: [0, 3.42, 0], direction: [0.18, 0.68, 0.7], taper: 0.85, seed: 23
   });
-  addVoxelBlob(near, { rx: 1.8, ry: 1.05, rz: 1.5, cell: 0.28, material: MAT.grass2, x: -0.65, y: 4.45, z: 0.12, seed: 23 });
-  addVoxelBlob(near, { rx: 1.55, ry: 1.15, rz: 1.7, cell: 0.27, material: MAT.grass, x: 0.9, y: 4.85, z: -0.42, seed: 29 });
-  addVoxelBlob(near, { rx: 1.25, ry: 0.95, rz: 1.35, cell: 0.26, material: MAT.grass2, x: 0.2, y: 5.7, z: 0.7, seed: 31 });
+  addVoxelBlob(near, { rx: 1.8, ry: 1.05, rz: 1.5, cell: 0.28, material: MAT.grass2, x: -0.65, y: 4.45, z: 0.12, seed: 29 });
+  addVoxelBlob(near, { rx: 1.55, ry: 1.15, rz: 1.7, cell: 0.27, material: MAT.grass, x: 0.9, y: 4.85, z: -0.42, seed: 31 });
+  addVoxelBlob(near, { rx: 1.25, ry: 0.95, rz: 1.35, cell: 0.26, material: MAT.grass2, x: 0.2, y: 5.7, z: 0.7, seed: 37 });
 
-  // LOD0 grows secondary branches, twigs and smaller leaf clusters,
-  // so the outline keeps changing as the player gets very close.
+  // EXTREME CLOSE: secondary branches, twigs and many smaller leaf clusters.
   const micro = new THREE.Group();
   addVoxelBranch(micro, {
     length: 4.55, cell: 0.075, material: MAT.woodLight,
-    start: [0, 0.08, 0], direction: [0.025, 1, 0.015], taper: 0.68, seed: 37
+    start: [0, 0.08, 0], direction: [0.025, 1, 0.015], taper: 0.68, seed: 41
   });
 
   const branches = [
@@ -377,7 +386,7 @@ function createTreeDetailProxy() {
   branches.forEach((b, i) => {
     addVoxelBranch(micro, {
       length: b[2], cell: 0.075, material: i % 2 ? MAT.woodLight : MAT.wood,
-      start: b[0], direction: b[1], taper: 0.86, seed: 41 + i * 3
+      start: b[0], direction: b[1], taper: 0.86, seed: 43 + i * 3
     });
   });
 
@@ -386,7 +395,9 @@ function createTreeDetailProxy() {
     [[-1.25,3.7,0.18],[-0.78,0.42,-0.4],0.95],
     [[1.6,3.85,-0.6],[0.72,0.5,-0.48],1.15],
     [[1.45,4.1,-0.45],[0.38,0.7,0.62],0.9],
-    [[0.55,4.25,1.22],[0.18,0.55,0.82],0.95]
+    [[0.55,4.25,1.22],[0.18,0.55,0.82],0.95],
+    [[-0.25,4.55,-1.1],[-0.2,0.6,-0.78],0.88],
+    [[0.85,4.65,0.8],[0.62,0.45,0.65],0.82]
   ];
   twigData.forEach((b, i) => {
     addVoxelBranch(micro, {
@@ -402,62 +413,71 @@ function createTreeDetailProxy() {
     [1.15,5.4,0.25,0.95,0.82,1.05],
     [0.05,5.9,0.65,0.9,0.7,0.95],
     [-0.85,5.35,0.95,0.9,0.68,0.85],
-    [0.85,4.95,1.0,0.78,0.68,0.82]
+    [0.85,4.95,1.0,0.78,0.68,0.82],
+    [-1.45,4.9,-0.55,0.7,0.58,0.72],
+    [1.55,4.35,0.45,0.72,0.58,0.78],
+    [0.0,5.25,-1.35,0.66,0.55,0.7]
   ];
   leafBlobs.forEach((v, i) => addVoxelBlob(micro, {
     x:v[0], y:v[1], z:v[2], rx:v[3], ry:v[4], rz:v[5],
     cell: 0.12, material: i % 2 ? MAT.grass : MAT.grass2, seed: 73 + i * 5
   }));
 
-  root.add(near, micro);
+  root.add(mid, near, micro);
   scene.add(root);
-  return { root, near, micro };
+  return { root, mid, near, micro };
 }
 
 function createHillDetailProxy() {
   const root = new THREE.Group();
   root.visible = false;
 
+  // MID: the simple stepped silhouette becomes a cluster of larger rock masses.
+  const mid = new THREE.Group();
+  addVoxelBlob(mid, { rx: 4.6, ry: 2.2, rz: 3.55, cell: 0.72, material: MAT.stone, y: 2.2, seed: 79, roughness: 0.16 });
+  addVoxelBlob(mid, { rx: 2.45, ry: 1.45, rz: 2.0, cell: 0.62, material: MAT.stoneLight, x: -1.5, y: 4.0, z: 0.4, seed: 83, roughness: 0.18 });
+  addVoxelBlob(mid, { rx: 1.9, ry: 1.1, rz: 1.55, cell: 0.58, material: MAT.stoneDark, x: 1.8, y: 3.45, z: -0.55, seed: 89, roughness: 0.2 });
+
+  // NEAR: ledges, overhangs and split ridges change the silhouette further.
   const near = new THREE.Group();
-  // LOD1: a coarse stepped rock becomes an irregular cliff with ledges and a split crest.
   addVoxelBlob(near, { rx: 4.7, ry: 2.3, rz: 3.65, cell: 0.42, material: MAT.stone, y: 2.35, seed: 83, roughness: 0.28 });
   addVoxelBlob(near, { rx: 2.8, ry: 1.6, rz: 2.45, cell: 0.36, material: MAT.stoneLight, x: -1.55, y: 4.15, z: 0.45, seed: 89, roughness: 0.35 });
   addVoxelBlob(near, { rx: 2.25, ry: 1.25, rz: 1.9, cell: 0.34, material: MAT.stoneDark, x: 1.7, y: 3.8, z: -0.7, seed: 97, roughness: 0.32 });
   near.add(box(2.2, 0.42, 1.35, MAT.stoneLight, -3.9, 2.25, 1.1));
   near.add(box(1.45, 0.35, 2.0, MAT.stone, 3.75, 1.8, -0.8));
+  near.add(box(1.2, 1.15, 0.9, MAT.stoneDark, -2.9, 4.55, -1.5));
 
+  // EXTREME CLOSE: broken ridges, small outcrops and notches.
   const micro = new THREE.Group();
-  // LOD0: more, smaller rock masses create notches, overhangs and broken ridges.
   addVoxelBlob(micro, { rx: 4.8, ry: 2.35, rz: 3.75, cell: 0.22, material: MAT.stone, y: 2.35, seed: 101, roughness: 0.42 });
   [
     [-2.6,3.9,0.5,2.1,1.45,2.0,107],
     [-0.7,4.8,-0.75,1.8,1.25,1.65,109],
     [1.45,4.25,-0.9,1.95,1.35,1.7,113],
     [2.85,3.15,0.8,1.55,1.05,1.4,127],
-    [-3.35,2.55,-1.0,1.2,0.9,1.45,131]
+    [-3.35,2.55,-1.0,1.2,0.9,1.45,131],
+    [0.2,5.65,0.25,0.9,0.75,0.8,137]
   ].forEach((v, i) => addVoxelBlob(micro, {
     x:v[0], y:v[1], z:v[2], rx:v[3], ry:v[4], rz:v[5],
     cell: 0.18, material: i % 3 === 0 ? MAT.stoneLight : (i % 3 === 1 ? MAT.stoneDark : MAT.stone),
     seed:v[6], roughness:0.48
   }));
 
-  // Broken shelf blocks intentionally alter the silhouette rather than only the surface.
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 22; i++) {
     const side = i % 2 ? -1 : 1;
-    const px = side * (3.0 + (i % 4) * 0.42);
-    const py = 1.0 + (i % 5) * 0.62;
-    const pz = -2.2 + (i % 6) * 0.72;
-    micro.add(box(0.42, 0.34, 0.5, i % 3 ? MAT.stone : MAT.stoneLight, px, py, pz));
+    const px = side * (2.9 + (i % 5) * 0.38);
+    const py = 0.9 + (i % 6) * 0.58;
+    const pz = -2.5 + (i % 7) * 0.68;
+    micro.add(box(0.38, 0.3 + (i % 3) * 0.08, 0.46, i % 3 ? MAT.stone : MAT.stoneLight, px, py, pz));
   }
 
-  root.add(near, micro);
+  root.add(mid, near, micro);
   scene.add(root);
-  return { root, near, micro };
+  return { root, mid, near, micro };
 }
 
 function updateLocalDetail() {
   if (groundDetail) {
-    // Snap the patch so detail feels anchored to the world instead of sliding underfoot.
     const snap = 0.35;
     groundDetail.root.position.set(
       Math.round(player.x / snap) * snap,
@@ -479,18 +499,24 @@ function updateLocalDetail() {
       }
     }
 
-    const limit = nearest ? 17 * nearest.scale : 0;
+    const farToMid = nearest ? 70 * nearest.scale : 0;
+    const midToNear = nearest ? 24 * nearest.scale : 0;
+    const nearToMicro = nearest
+      ? (lensOwned && lensActive ? 6.5 : 3.2) * nearest.scale
+      : 0;
+
     treeDetailTargets.forEach(target => {
-      if (target.base) target.base.visible = target !== nearest || nearestD >= limit;
+      if (target.base) target.base.visible = target !== nearest || nearestD >= farToMid;
     });
-    treeDetailProxy.root.visible = !!nearest && nearestD < limit;
+
+    treeDetailProxy.root.visible = !!nearest && nearestD < farToMid;
     if (treeDetailProxy.root.visible) {
       if (nearest.base) nearest.base.visible = false;
       treeDetailProxy.root.position.copy(nearest.position);
       treeDetailProxy.root.scale.setScalar(nearest.scale);
-      const microRange = lensOwned && lensActive ? 6.5 * nearest.scale : 3.2 * nearest.scale;
-      treeDetailProxy.near.visible = nearestD >= microRange;
-      treeDetailProxy.micro.visible = nearestD < microRange;
+      treeDetailProxy.mid.visible = nearestD >= midToNear;
+      treeDetailProxy.near.visible = nearestD < midToNear && nearestD >= nearToMicro;
+      treeDetailProxy.micro.visible = nearestD < nearToMicro;
     }
   }
 
@@ -505,10 +531,15 @@ function updateLocalDetail() {
       }
     }
 
+    const farToMid = 80;
+    const midToNear = 26;
+    const nearToMicro = lensOwned && lensActive ? 8.0 : 3.8;
+
     hillDetailTargets.forEach(target => {
-      if (target.base) target.base.visible = target !== nearest || nearestD >= 24;
+      if (target.base) target.base.visible = target !== nearest || nearestD >= farToMid;
     });
-    hillDetailProxy.root.visible = !!nearest && nearestD < 24;
+
+    hillDetailProxy.root.visible = !!nearest && nearestD < farToMid;
     if (hillDetailProxy.root.visible) {
       if (nearest.base) nearest.base.visible = false;
       hillDetailProxy.root.position.copy(nearest.position);
@@ -517,9 +548,9 @@ function updateLocalDetail() {
         Math.max(0.7, nearest.height / 8),
         nearest.width * 0.82 / 8.2
       );
-      const microRange = lensOwned && lensActive ? 7.5 : 3.6;
-      hillDetailProxy.near.visible = nearestD >= microRange;
-      hillDetailProxy.micro.visible = nearestD < microRange;
+      hillDetailProxy.mid.visible = nearestD >= midToNear;
+      hillDetailProxy.near.visible = nearestD < midToNear && nearestD >= nearToMicro;
+      hillDetailProxy.micro.visible = nearestD < nearToMicro;
     }
   }
 }
@@ -641,6 +672,13 @@ function makeTower() {
   mid.add(box(2, 10, 2, MAT.black, -1.5, 42, 0));
   const beacon = box(1.2, 1.2, 1.2, MAT.glow, -1.5, 47.6, 0);
   mid.add(beacon);
+
+  // MID: secondary masses appear, but remain coarse.
+  mid.add(box(4.8, 7.2, 4.8, MAT.stoneDark, 6.8, 3.6, 1.2));
+  mid.add(box(3.6, 8.8, 3.6, MAT.stone, -6.1, 4.4, -2.3));
+  mid.add(box(5.4, 1.2, 5.4, MAT.stoneLight, 6.8, 7.4, 1.2));
+  mid.add(box(4.0, 1.0, 4.0, MAT.stoneLight, -6.1, 8.9, -2.3));
+  mid.add(box(2.3, 3.1, 2.3, MAT.black, 5.8, 10.0, -2.9));
   addLevel(root, 2, mid);
 
   const near = new THREE.Group();
@@ -671,6 +709,20 @@ function makeTower() {
   near.add(box(12.0, 0.62, 12.1, MAT.stone, 0, 16.4, 0));
   near.add(box(3.1, 2.2, 2.3, MAT.black, 4.1, 34.5, -1.7));
   near.add(box(2.0, 3.0, 1.8, MAT.black, -4.0, 35.3, 1.8));
+
+  // Reference-style architectural sub-forms: portal, stairs, side roofs and small turrets.
+  near.add(box(5.0, 0.45, 2.4, MAT.stoneLight, 0, 0.28, 8.4));
+  near.add(box(4.25, 0.42, 2.0, MAT.stone, 0, 0.68, 8.0));
+  near.add(box(3.55, 0.38, 1.6, MAT.stoneLight, 0, 1.05, 7.62));
+  near.add(box(0.75, 4.6, 0.85, MAT.stoneLight, -2.35, 3.15, 7.3));
+  near.add(box(0.75, 4.6, 0.85, MAT.stoneLight, 2.35, 3.15, 7.3));
+  near.add(box(4.0, 0.7, 0.9, MAT.stoneLight, 0, 5.25, 7.3));
+
+  for (const side of [-1, 1]) {
+    near.add(box(3.4, 0.55, 3.0, MAT.gold, side * 5.1, 10.6, 2.6));
+    near.add(box(2.6, 3.8, 2.6, MAT.stone, side * 5.1, 8.4, 2.6));
+    near.add(box(1.5, 2.8, 1.5, MAT.stoneDark, side * 6.1, 13.0, -1.7));
+  }
 
   // LOD1: fine surface voxels appear on the lower facade as the player approaches.
   // Instancing keeps this dense layer cheap enough for mobile.
@@ -1113,7 +1165,7 @@ function updateWorldLOD() {
   const d = player.distanceTo(new THREE.Vector3(towerPos.x, player.y, towerPos.z));
   previousLod = lodLevel;
   lodLevel = d > 80 ? 3 : d > 24 ? 2 : d > 2.8 ? 1 : 0;
-  const names = ["LOD0 · MICRO ~5mm", "LOD1 · NEAR ~5cm", "LOD2 · MID ~1m", "LOD3 · FAR 2–8m"];
+  const names = ["LOD0 · EXTREME CLOSE", "LOD1 · NEAR", "LOD2 · MID", "LOD3 · FAR"];
   lodBadge.textContent = names[lodLevel];
   if (previousLod !== lodLevel) {
     lodBadge.classList.remove("lodFlash");
