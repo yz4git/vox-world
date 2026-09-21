@@ -40,4 +40,4 @@ The visual rule is:
 - Near distance: ~10x finer visible detail
 - Very near distance: ~100x detail used selectively for clues and inscriptions
 
-The prototype simulates this using layered LOD meshes rather than storing the whole world at 1 cm voxel resolution.
+The prototype simulates this using layered LOD meshes and dense InstancedMesh surface voxels rather than storing the whole world at millimeter-scale resolution.
