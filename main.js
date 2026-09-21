@@ -307,25 +307,95 @@ function addVoxelBranch(parent, {
   return inst;
 }
 
+function addThickVoxelBranch(parent, {
+  length,
+  cell,
+  radiusStart,
+  radiusEnd = radiusStart * 0.55,
+  material,
+  start = [0, 0, 0],
+  direction = [1, 0, 0],
+  seed = 0
+}) {
+  const dir = new THREE.Vector3(...direction).normalize();
+  const steps = Math.max(1, Math.ceil(length / cell));
+  const voxels = [];
+
+  for (let i = 0; i < steps; i++) {
+    const t = steps <= 1 ? 0 : i / (steps - 1);
+    const radius = THREE.MathUtils.lerp(radiusStart, radiusEnd, t);
+    const rCells = Math.max(1, Math.ceil(radius / cell));
+    const cx = start[0] + dir.x * length * t;
+    const cy = start[1] + dir.y * length * t;
+    const cz = start[2] + dir.z * length * t;
+
+    for (let ox = -rCells; ox <= rCells; ox++) {
+      for (let oy = -rCells; oy <= rCells; oy++) {
+        for (let oz = -rCells; oz <= rCells; oz++) {
+          const dx = ox * cell;
+          const dy = oy * cell;
+          const dz = oz * cell;
+          if (dx * dx + dy * dy + dz * dz > radius * radius) continue;
+          const wobble = Math.sin((i + seed) * 1.61 + ox * 0.7 + oz * 0.9) * cell * 0.08;
+          voxels.push([cx + dx + wobble, cy + dy, cz + dz - wobble]);
+        }
+      }
+    }
+  }
+
+  const geometry = new THREE.BoxGeometry(cell * 0.96, cell * 0.96, cell * 0.96);
+  const inst = new THREE.InstancedMesh(geometry, material, voxels.length);
+  const dummy = new THREE.Object3D();
+  voxels.forEach((v, i) => {
+    dummy.position.set(v[0], v[1], v[2]);
+    dummy.updateMatrix();
+    inst.setMatrixAt(i, dummy.matrix);
+  });
+  inst.castShadow = false;
+  inst.receiveShadow = true;
+  parent.add(inst);
+  return inst;
+}
+
 function createGroundDetail() {
   const root = new THREE.Group();
-  root.renderOrder = 3;
+  root.renderOrder = 2;
 
+  // Keep ground broad and readable. No sandpaper-like micro surface.
   const near = new THREE.Group();
-  addVoxelPanel(near, {
-    width: 9.0, height: 9.0, cell: 0.14, depth: 0.055,
-    y: 0.015, material: MAT.grass2, axis: "y", seed: 23
-  });
+  const coarseCell = 1.15;
+  for (let iz = -4; iz <= 4; iz++) {
+    for (let ix = -4; ix <= 4; ix++) {
+      const h = ((ix * 17 + iz * 29) % 5) * 0.035;
+      near.add(box(
+        coarseCell * 0.96,
+        0.11 + h,
+        coarseCell * 0.96,
+        (ix + iz) % 3 === 0 ? MAT.grass2 : MAT.grass,
+        ix * coarseCell,
+        0.04 + h * 0.5,
+        iz * coarseCell
+      ));
+    }
+  }
 
   const micro = new THREE.Group();
-  addVoxelPanel(micro, {
-    width: 3.2, height: 3.2, cell: 0.038, depth: 0.025,
-    y: 0.052, material: MAT.grass2, axis: "y", seed: 29
-  });
-  addVoxelPanel(micro, {
-    width: 1.75, height: 1.75, cell: 0.021, depth: 0.017,
-    y: 0.078, material: MAT.earth, axis: "y", seed: 31
-  });
+  const detailCell = 0.62;
+  for (let iz = -4; iz <= 4; iz++) {
+    for (let ix = -4; ix <= 4; ix++) {
+      if ((ix + iz * 2) % 3 !== 0) continue;
+      const h = 0.08 + ((ix * 11 + iz * 7) % 4) * 0.04;
+      micro.add(box(
+        detailCell * (1.5 + ((ix + iz) & 1) * 0.45),
+        h,
+        detailCell * (1.4 + ((ix - iz) & 1) * 0.4),
+        (ix + iz) % 2 ? MAT.earth : MAT.grass2,
+        ix * 0.92,
+        0.09 + h * 0.5,
+        iz * 0.92
+      ));
+    }
+  }
 
   root.add(near, micro);
   scene.add(root);
@@ -336,91 +406,99 @@ function createTreeDetailProxy() {
   const root = new THREE.Group();
   root.visible = false;
 
-  // MID: still blocky, but the single canopy becomes multiple masses and
-  // the trunk starts to taper. This is the first silhouette change.
+  // MID: same overall mass as FAR, but trunk and crown gain clear volume.
   const mid = new THREE.Group();
-  addVoxelBranch(mid, {
-    length: 4.25, cell: 0.34, material: MAT.wood,
-    start: [0, 0.12, 0], direction: [0.015, 1, 0.01], taper: 0.45, seed: 5
+  addThickVoxelBranch(mid, {
+    length: 4.6, cell: 0.34, radiusStart: 0.72, radiusEnd: 0.48,
+    material: MAT.wood, start: [0, 0.15, 0], direction: [0, 1, 0], seed: 5
   });
-  addVoxelBlob(mid, { rx: 1.85, ry: 1.05, rz: 1.55, cell: 0.52, material: MAT.grass2, x: -0.55, y: 4.45, z: 0.05, seed: 7, roughness: 0.12 });
-  addVoxelBlob(mid, { rx: 1.55, ry: 1.0, rz: 1.65, cell: 0.5, material: MAT.grass, x: 0.95, y: 4.72, z: -0.2, seed: 9, roughness: 0.14 });
-  addVoxelBlob(mid, { rx: 1.05, ry: 0.82, rz: 1.1, cell: 0.46, material: MAT.grass2, x: 0.15, y: 5.55, z: 0.55, seed: 11, roughness: 0.13 });
+  addVoxelBlob(mid, { rx: 2.15, ry: 1.35, rz: 1.9, cell: 0.52, material: MAT.grass2, x: -0.65, y: 4.55, z: 0.05, seed: 7, roughness: 0.08 });
+  addVoxelBlob(mid, { rx: 1.9, ry: 1.25, rz: 2.05, cell: 0.5, material: MAT.grass, x: 1.05, y: 4.8, z: -0.2, seed: 9, roughness: 0.1 });
+  addVoxelBlob(mid, { rx: 1.55, ry: 1.0, rz: 1.55, cell: 0.48, material: MAT.grass2, x: 0.1, y: 5.75, z: 0.55, seed: 11, roughness: 0.08 });
 
-  // NEAR: primary branches and layered canopy masses appear.
+  // NEAR: thick primary limbs support large, overlapping leaf masses.
   const near = new THREE.Group();
-  addVoxelBranch(near, {
-    length: 4.4, cell: 0.16, material: MAT.woodLight,
-    start: [0, 0.12, 0], direction: [0.03, 1, 0.02], taper: 0.62, seed: 13
+  addThickVoxelBranch(near, {
+    length: 4.8, cell: 0.22, radiusStart: 0.78, radiusEnd: 0.42,
+    material: MAT.woodLight, start: [0, 0.12, 0], direction: [0.01, 1, 0.01], seed: 13
   });
-  addVoxelBranch(near, {
-    length: 2.35, cell: 0.17, material: MAT.wood,
-    start: [0, 2.85, 0], direction: [-0.78, 0.52, 0.18], taper: 0.78, seed: 17
+  addThickVoxelBranch(near, {
+    length: 2.8, cell: 0.2, radiusStart: 0.52, radiusEnd: 0.28,
+    material: MAT.wood, start: [0, 2.65, 0], direction: [-0.8, 0.52, 0.22], seed: 17
   });
-  addVoxelBranch(near, {
-    length: 2.65, cell: 0.17, material: MAT.wood,
-    start: [0.06, 3.15, 0], direction: [0.72, 0.58, -0.28], taper: 0.8, seed: 19
+  addThickVoxelBranch(near, {
+    length: 3.0, cell: 0.2, radiusStart: 0.55, radiusEnd: 0.3,
+    material: MAT.wood, start: [0.05, 2.9, 0], direction: [0.76, 0.56, -0.26], seed: 19
   });
-  addVoxelBranch(near, {
-    length: 1.85, cell: 0.16, material: MAT.wood,
-    start: [0, 3.42, 0], direction: [0.18, 0.68, 0.7], taper: 0.85, seed: 23
+  addThickVoxelBranch(near, {
+    length: 2.35, cell: 0.19, radiusStart: 0.44, radiusEnd: 0.24,
+    material: MAT.wood, start: [0, 3.2, 0.05], direction: [0.2, 0.66, 0.72], seed: 23
   });
-  addVoxelBlob(near, { rx: 1.8, ry: 1.05, rz: 1.5, cell: 0.28, material: MAT.grass2, x: -0.65, y: 4.45, z: 0.12, seed: 29 });
-  addVoxelBlob(near, { rx: 1.55, ry: 1.15, rz: 1.7, cell: 0.27, material: MAT.grass, x: 0.9, y: 4.85, z: -0.42, seed: 31 });
-  addVoxelBlob(near, { rx: 1.25, ry: 0.95, rz: 1.35, cell: 0.26, material: MAT.grass2, x: 0.2, y: 5.7, z: 0.7, seed: 37 });
-
-  // EXTREME CLOSE: secondary branches, twigs and many smaller leaf clusters.
-  const micro = new THREE.Group();
-  addVoxelBranch(micro, {
-    length: 4.55, cell: 0.075, material: MAT.woodLight,
-    start: [0, 0.08, 0], direction: [0.025, 1, 0.015], taper: 0.68, seed: 41
+  addThickVoxelBranch(near, {
+    length: 2.1, cell: 0.19, radiusStart: 0.42, radiusEnd: 0.22,
+    material: MAT.wood, start: [-0.12, 3.35, 0], direction: [-0.28, 0.68, -0.68], seed: 29
   });
 
-  const branches = [
-    [[0,2.5,0],[-0.82,0.48,0.22],2.6],
-    [[0.03,2.78,0],[0.78,0.54,-0.26],2.9],
-    [[0,3.05,0],[0.25,0.66,0.7],2.2],
-    [[-0.2,3.45,0],[-0.42,0.72,-0.54],1.85],
-    [[0.2,3.65,-0.1],[0.55,0.74,0.4],1.75]
-  ];
-  branches.forEach((b, i) => {
-    addVoxelBranch(micro, {
-      length: b[2], cell: 0.075, material: i % 2 ? MAT.woodLight : MAT.wood,
-      start: b[0], direction: b[1], taper: 0.86, seed: 43 + i * 3
-    });
-  });
-
-  const twigData = [
-    [[-1.55,3.45,0.42],[-0.55,0.5,0.66],1.05],
-    [[-1.25,3.7,0.18],[-0.78,0.42,-0.4],0.95],
-    [[1.6,3.85,-0.6],[0.72,0.5,-0.48],1.15],
-    [[1.45,4.1,-0.45],[0.38,0.7,0.62],0.9],
-    [[0.55,4.25,1.22],[0.18,0.55,0.82],0.95],
-    [[-0.25,4.55,-1.1],[-0.2,0.6,-0.78],0.88],
-    [[0.85,4.65,0.8],[0.62,0.45,0.65],0.82]
-  ];
-  twigData.forEach((b, i) => {
-    addVoxelBranch(micro, {
-      length: b[2], cell: 0.047, material: MAT.woodLight,
-      start: b[0], direction: b[1], taper: 0.94, seed: 61 + i
-    });
-  });
-
-  const leafBlobs = [
-    [-1.2,4.4,0.2,1.15,0.8,1.05],
-    [-0.15,4.85,-0.65,1.0,0.95,1.15],
-    [1.0,4.65,-0.72,1.25,0.86,1.0],
-    [1.15,5.4,0.25,0.95,0.82,1.05],
-    [0.05,5.9,0.65,0.9,0.7,0.95],
-    [-0.85,5.35,0.95,0.9,0.68,0.85],
-    [0.85,4.95,1.0,0.78,0.68,0.82],
-    [-1.45,4.9,-0.55,0.7,0.58,0.72],
-    [1.55,4.35,0.45,0.72,0.58,0.78],
-    [0.0,5.25,-1.35,0.66,0.55,0.7]
-  ];
-  leafBlobs.forEach((v, i) => addVoxelBlob(micro, {
+  [
+    [-1.35,4.5,0.1,1.65,1.05,1.45],
+    [-0.25,5.1,-0.85,1.5,1.0,1.5],
+    [1.15,4.65,-0.55,1.75,1.05,1.5],
+    [1.25,5.45,0.55,1.45,0.95,1.35],
+    [0.0,6.0,0.7,1.35,0.9,1.25],
+    [-1.15,5.35,0.95,1.25,0.85,1.15]
+  ].forEach((v, i) => addVoxelBlob(near, {
     x:v[0], y:v[1], z:v[2], rx:v[3], ry:v[4], rz:v[5],
-    cell: 0.12, material: i % 2 ? MAT.grass : MAT.grass2, seed: 73 + i * 5
+    cell: 0.26, material: i % 2 ? MAT.grass : MAT.grass2,
+    seed: 31 + i * 3, roughness: 0.12
+  }));
+
+  // EXTREME CLOSE: keep the same broad crown, then add secondary structure.
+  // It should feel richer, not thinner.
+  const micro = new THREE.Group();
+  addThickVoxelBranch(micro, {
+    length: 4.9, cell: 0.13, radiusStart: 0.8, radiusEnd: 0.4,
+    material: MAT.woodLight, start: [0, 0.1, 0], direction: [0.01, 1, 0.01], seed: 41
+  });
+
+  const mainBranches = [
+    [[0,2.55,0],[-0.8,0.5,0.2],3.0,0.56,0.24],
+    [[0.04,2.82,0],[0.76,0.56,-0.28],3.15,0.58,0.25],
+    [[0,3.08,0],[0.24,0.64,0.73],2.55,0.48,0.21],
+    [[-0.12,3.32,0],[-0.3,0.68,-0.66],2.35,0.46,0.2],
+    [[0.16,3.55,-0.04],[0.58,0.7,0.4],2.1,0.42,0.18]
+  ];
+  mainBranches.forEach((b, i) => addThickVoxelBranch(micro, {
+    length:b[2], cell:0.12, radiusStart:b[3], radiusEnd:b[4],
+    material:i % 2 ? MAT.woodLight : MAT.wood,
+    start:b[0], direction:b[1], seed:47 + i * 5
+  }));
+
+  const secondary = [
+    [[-1.65,3.7,0.4],[-0.62,0.54,0.56],1.45,0.28,0.13],
+    [[-1.3,4.0,0.15],[-0.72,0.48,-0.42],1.3,0.26,0.12],
+    [[1.65,4.0,-0.55],[0.68,0.52,-0.5],1.5,0.3,0.13],
+    [[1.45,4.28,-0.35],[0.4,0.7,0.58],1.25,0.26,0.12],
+    [[0.55,4.45,1.2],[0.2,0.58,0.78],1.2,0.24,0.11]
+  ];
+  secondary.forEach((b, i) => addThickVoxelBranch(micro, {
+    length:b[2], cell:0.095, radiusStart:b[3], radiusEnd:b[4],
+    material:MAT.woodLight, start:b[0], direction:b[1], seed:73 + i
+  }));
+
+  [
+    [-1.5,4.45,0.15,1.45,0.92,1.3],
+    [-0.45,4.9,-0.8,1.3,0.95,1.35],
+    [0.75,4.65,-0.9,1.45,0.9,1.25],
+    [1.5,4.55,-0.15,1.35,0.88,1.2],
+    [1.25,5.3,0.65,1.25,0.82,1.1],
+    [0.25,5.85,0.8,1.2,0.82,1.05],
+    [-0.95,5.45,0.95,1.1,0.78,0.95],
+    [-1.55,5.0,-0.65,1.0,0.72,0.92],
+    [0.1,5.25,-1.45,0.95,0.68,0.88]
+  ].forEach((v, i) => addVoxelBlob(micro, {
+    x:v[0], y:v[1], z:v[2], rx:v[3], ry:v[4], rz:v[5],
+    cell: 0.17, material: i % 2 ? MAT.grass : MAT.grass2,
+    seed: 89 + i * 4, roughness: 0.14
   }));
 
   root.add(mid, near, micro);
