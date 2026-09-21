@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="theme-color" content="#8fb8c9" />
+  <title>VOXEL VEIL — Prototype</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="game"></div>
+
+  <div id="hud" class="hidden">
+    <div id="topbar">
+      <div class="brand">VOXEL VEIL <span>PROTOTYPE</span></div>
+      <div id="lodBadge">LOD3 · FAR</div>
+    </div>
+
+    <div id="objective">白草の丘から、遠くに見える黒い観測塔へ向かう</div>
+    <div id="compass"><span>OBSERVATION TOWER</span><b id="towerDistance">-- m</b></div>
+
+    <div id="crosshair">+</div>
+    <div id="prompt"></div>
+    <div id="toast"></div>
+
+    <div id="inventory">
+      <button id="lensButton" class="locked" aria-label="Observation Lens">
+        <span class="lensIcon">◉</span>
+        <span>LENS</span>
+      </button>
+    </div>
+
+    <div id="mobileControls">
+      <div id="stickBase"><div id="stickKnob"></div></div>
+      <button id="actionButton">ACTION</button>
+    </div>
+  </div>
+
+  <div id="startScreen">
+    <div class="startCard">
+      <div class="eyebrow">EXPLORATION ADVENTURE PROTOTYPE</div>
+      <h1>VOXEL<br />VEIL</h1>
+      <p>
+        遠くでは粗く、近づくほど細部が生まれる世界。<br />
+        観察し、記憶し、世界に隠された順序を見つける。
+      </p>
+      <button id="startButton">ENTER THE WORLD</button>
+      <small>WASD / drag / E · iPhone: 左スティック / 右ドラッグ / ACTION</small>
+    </div>
+  </div>
+
+  <div id="puzzle" class="panel hidden" role="dialog" aria-modal="true">
+    <div class="panelCard">
+      <div class="eyebrow">OBSERVATION TOWER · SEALED DOOR</div>
+      <h2>3つの記号を順に押す</h2>
+      <p id="puzzleHint">旅の途中で見たものを思い出せ。</p>
+      <div class="symbolRow">
+        <button data-symbol="water">水</button>
+        <button data-symbol="person">人</button>
+        <button data-symbol="tree">木</button>
+      </div>
+      <div id="sequence">＿ → ＿ → ＿</div>
+      <button id="resetPuzzle" class="secondary">RESET</button>
+      <button id="closePuzzle" class="secondary">CLOSE</button>
+    </div>
+  </div>
+
+  <div id="journal" class="panel hidden">
+    <div class="panelCard compact">
+      <div class="eyebrow">OBSERVATION RECORD</div>
+      <h2 id="journalTitle">記録</h2>
+      <p id="journalText"></p>
+      <button id="journalClose">CLOSE</button>
+    </div>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
