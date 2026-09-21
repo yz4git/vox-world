@@ -213,6 +213,100 @@ function addVoxelBoxShell(parent, {
   }
 }
 
+function addVoxelBlob(parent, {
+  rx,
+  ry,
+  rz,
+  cell,
+  material,
+  x = 0,
+  y = 0,
+  z = 0,
+  seed = 0,
+  shellOnly = true,
+  roughness = 0.16
+}) {
+  const nx = Math.max(1, Math.ceil((rx * 2) / cell));
+  const ny = Math.max(1, Math.ceil((ry * 2) / cell));
+  const nz = Math.max(1, Math.ceil((rz * 2) / cell));
+  const candidates = [];
+
+  for (let ix = 0; ix < nx; ix++) {
+    for (let iy = 0; iy < ny; iy++) {
+      for (let iz = 0; iz < nz; iz++) {
+        const px = -rx + (ix + 0.5) * cell;
+        const py = -ry + (iy + 0.5) * cell;
+        const pz = -rz + (iz + 0.5) * cell;
+        const wobble =
+          Math.sin((ix + seed * 3.1) * 1.71) * 0.045 +
+          Math.sin((iy + seed * 5.3) * 2.17) * 0.035 +
+          Math.sin((iz + seed * 7.7) * 1.37) * 0.04;
+        const n =
+          (px * px) / (rx * rx) +
+          (py * py) / (ry * ry) +
+          (pz * pz) / (rz * rz);
+        const limit = 1 + wobble * roughness * 10;
+        if (n > limit) continue;
+        if (shellOnly && n < 0.52 + wobble * 0.6) continue;
+        candidates.push([px, py, pz, ix, iy, iz]);
+      }
+    }
+  }
+
+  const geometry = new THREE.BoxGeometry(cell * 0.94, cell * 0.94, cell * 0.94);
+  const inst = new THREE.InstancedMesh(geometry, material, candidates.length);
+  const dummy = new THREE.Object3D();
+
+  candidates.forEach(([px, py, pz, ix, iy, iz], i) => {
+    const jitter = Math.sin((ix * 19 + iy * 23 + iz * 29 + seed) * 0.73) * cell * 0.09;
+    dummy.position.set(x + px, y + py + jitter, z + pz);
+    const stretch = 0.9 + ((ix * 13 + iy * 7 + iz * 17 + seed) % 9) * 0.018;
+    dummy.scale.set(stretch, 0.9 + ((iy + seed) % 5) * 0.026, stretch);
+    dummy.updateMatrix();
+    inst.setMatrixAt(i, dummy.matrix);
+  });
+
+  inst.castShadow = false;
+  inst.receiveShadow = true;
+  parent.add(inst);
+  return inst;
+}
+
+function addVoxelBranch(parent, {
+  length,
+  cell,
+  material,
+  start = [0, 0, 0],
+  direction = [1, 0, 0],
+  taper = 1,
+  seed = 0
+}) {
+  const dir = new THREE.Vector3(...direction).normalize();
+  const count = Math.max(1, Math.floor(length / cell));
+  const geometry = new THREE.BoxGeometry(cell, cell, cell);
+  const inst = new THREE.InstancedMesh(geometry, material, count);
+  const dummy = new THREE.Object3D();
+
+  for (let i = 0; i < count; i++) {
+    const t = count <= 1 ? 0 : i / (count - 1);
+    const side = Math.sin((i + seed) * 1.9) * cell * 0.18;
+    dummy.position.set(
+      start[0] + dir.x * length * t + side * dir.z,
+      start[1] + dir.y * length * t + Math.sin((i + seed) * 1.3) * cell * 0.12,
+      start[2] + dir.z * length * t - side * dir.x
+    );
+    const sc = Math.max(0.35, 1 - t * taper * 0.62);
+    dummy.scale.set(sc, sc, sc);
+    dummy.updateMatrix();
+    inst.setMatrixAt(i, dummy.matrix);
+  }
+
+  inst.castShadow = false;
+  inst.receiveShadow = true;
+  parent.add(inst);
+  return inst;
+}
+
 function createGroundDetail() {
   const root = new THREE.Group();
   root.renderOrder = 3;
@@ -242,40 +336,78 @@ function createTreeDetailProxy() {
   const root = new THREE.Group();
   root.visible = false;
 
+  // LOD1 is a new shape, not a subdivided copy: trunk taper, primary branches,
+  // and several separate canopy masses change the silhouette.
   const near = new THREE.Group();
-  addVoxelBoxShell(near, {
-    width: 0.84, height: 4.0, depth: 0.84, cell: 0.075,
-    material: MAT.woodLight, y: 2.0, seed: 41
+  addVoxelBranch(near, {
+    length: 4.4, cell: 0.16, material: MAT.woodLight,
+    start: [0, 0.12, 0], direction: [0.03, 1, 0.02], taper: 0.62, seed: 11
   });
-  addVoxelBoxShell(near, {
-    width: 4.2, height: 2.2, depth: 3.6, cell: 0.16,
-    material: MAT.grass2, y: 4.4, seed: 43
+  addVoxelBranch(near, {
+    length: 2.35, cell: 0.17, material: MAT.wood,
+    start: [0, 2.85, 0], direction: [-0.78, 0.52, 0.18], taper: 0.78, seed: 13
   });
-  addVoxelBoxShell(near, {
-    width: 2.7, height: 2.1, depth: 4.5, cell: 0.15,
-    material: MAT.grass, x: 0.8, y: 5.2, seed: 47
+  addVoxelBranch(near, {
+    length: 2.65, cell: 0.17, material: MAT.wood,
+    start: [0.06, 3.15, 0], direction: [0.72, 0.58, -0.28], taper: 0.8, seed: 17
   });
+  addVoxelBranch(near, {
+    length: 1.85, cell: 0.16, material: MAT.wood,
+    start: [0, 3.42, 0], direction: [0.18, 0.68, 0.7], taper: 0.85, seed: 19
+  });
+  addVoxelBlob(near, { rx: 1.8, ry: 1.05, rz: 1.5, cell: 0.28, material: MAT.grass2, x: -0.65, y: 4.45, z: 0.12, seed: 23 });
+  addVoxelBlob(near, { rx: 1.55, ry: 1.15, rz: 1.7, cell: 0.27, material: MAT.grass, x: 0.9, y: 4.85, z: -0.42, seed: 29 });
+  addVoxelBlob(near, { rx: 1.25, ry: 0.95, rz: 1.35, cell: 0.26, material: MAT.grass2, x: 0.2, y: 5.7, z: 0.7, seed: 31 });
 
+  // LOD0 grows secondary branches, twigs and smaller leaf clusters,
+  // so the outline keeps changing as the player gets very close.
   const micro = new THREE.Group();
-  addVoxelBoxShell(micro, {
-    width: 0.86, height: 4.0, depth: 0.86, cell: 0.026,
-    material: MAT.woodLight, y: 2.0, seed: 53
-  });
-  addVoxelBoxShell(micro, {
-    width: 4.22, height: 2.22, depth: 3.62, cell: 0.065,
-    material: MAT.grass2, y: 4.4, seed: 59
-  });
-  addVoxelBoxShell(micro, {
-    width: 2.72, height: 2.12, depth: 4.52, cell: 0.06,
-    material: MAT.grass, x: 0.8, y: 5.2, seed: 61
+  addVoxelBranch(micro, {
+    length: 4.55, cell: 0.075, material: MAT.woodLight,
+    start: [0, 0.08, 0], direction: [0.025, 1, 0.015], taper: 0.68, seed: 37
   });
 
-  // Bark fissures become individually readable only at arm's length.
-  for (let i = 0; i < 42; i++) {
-    const yy = 0.35 + (i % 14) * 0.245;
-    const xx = -0.36 + Math.floor(i / 14) * 0.36;
-    micro.add(box(0.018, 0.12, 0.015, MAT.black, xx, yy, 0.438));
-  }
+  const branches = [
+    [[0,2.5,0],[-0.82,0.48,0.22],2.6],
+    [[0.03,2.78,0],[0.78,0.54,-0.26],2.9],
+    [[0,3.05,0],[0.25,0.66,0.7],2.2],
+    [[-0.2,3.45,0],[-0.42,0.72,-0.54],1.85],
+    [[0.2,3.65,-0.1],[0.55,0.74,0.4],1.75]
+  ];
+  branches.forEach((b, i) => {
+    addVoxelBranch(micro, {
+      length: b[2], cell: 0.075, material: i % 2 ? MAT.woodLight : MAT.wood,
+      start: b[0], direction: b[1], taper: 0.86, seed: 41 + i * 3
+    });
+  });
+
+  const twigData = [
+    [[-1.55,3.45,0.42],[-0.55,0.5,0.66],1.05],
+    [[-1.25,3.7,0.18],[-0.78,0.42,-0.4],0.95],
+    [[1.6,3.85,-0.6],[0.72,0.5,-0.48],1.15],
+    [[1.45,4.1,-0.45],[0.38,0.7,0.62],0.9],
+    [[0.55,4.25,1.22],[0.18,0.55,0.82],0.95]
+  ];
+  twigData.forEach((b, i) => {
+    addVoxelBranch(micro, {
+      length: b[2], cell: 0.047, material: MAT.woodLight,
+      start: b[0], direction: b[1], taper: 0.94, seed: 61 + i
+    });
+  });
+
+  const leafBlobs = [
+    [-1.2,4.4,0.2,1.15,0.8,1.05],
+    [-0.15,4.85,-0.65,1.0,0.95,1.15],
+    [1.0,4.65,-0.72,1.25,0.86,1.0],
+    [1.15,5.4,0.25,0.95,0.82,1.05],
+    [0.05,5.9,0.65,0.9,0.7,0.95],
+    [-0.85,5.35,0.95,0.9,0.68,0.85],
+    [0.85,4.95,1.0,0.78,0.68,0.82]
+  ];
+  leafBlobs.forEach((v, i) => addVoxelBlob(micro, {
+    x:v[0], y:v[1], z:v[2], rx:v[3], ry:v[4], rz:v[5],
+    cell: 0.12, material: i % 2 ? MAT.grass : MAT.grass2, seed: 73 + i * 5
+  }));
 
   root.add(near, micro);
   scene.add(root);
@@ -287,16 +419,36 @@ function createHillDetailProxy() {
   root.visible = false;
 
   const near = new THREE.Group();
-  addVoxelBoxShell(near, {
-    width: 10, height: 5.0, depth: 8.2, cell: 0.18,
-    material: MAT.stoneLight, y: 2.5, seed: 67
-  });
+  // LOD1: a coarse stepped rock becomes an irregular cliff with ledges and a split crest.
+  addVoxelBlob(near, { rx: 4.7, ry: 2.3, rz: 3.65, cell: 0.42, material: MAT.stone, y: 2.35, seed: 83, roughness: 0.28 });
+  addVoxelBlob(near, { rx: 2.8, ry: 1.6, rz: 2.45, cell: 0.36, material: MAT.stoneLight, x: -1.55, y: 4.15, z: 0.45, seed: 89, roughness: 0.35 });
+  addVoxelBlob(near, { rx: 2.25, ry: 1.25, rz: 1.9, cell: 0.34, material: MAT.stoneDark, x: 1.7, y: 3.8, z: -0.7, seed: 97, roughness: 0.32 });
+  near.add(box(2.2, 0.42, 1.35, MAT.stoneLight, -3.9, 2.25, 1.1));
+  near.add(box(1.45, 0.35, 2.0, MAT.stone, 3.75, 1.8, -0.8));
 
   const micro = new THREE.Group();
-  addVoxelBoxShell(micro, {
-    width: 10, height: 5.0, depth: 8.2, cell: 0.055,
-    material: MAT.stoneLight, y: 2.5, seed: 71
-  });
+  // LOD0: more, smaller rock masses create notches, overhangs and broken ridges.
+  addVoxelBlob(micro, { rx: 4.8, ry: 2.35, rz: 3.75, cell: 0.22, material: MAT.stone, y: 2.35, seed: 101, roughness: 0.42 });
+  [
+    [-2.6,3.9,0.5,2.1,1.45,2.0,107],
+    [-0.7,4.8,-0.75,1.8,1.25,1.65,109],
+    [1.45,4.25,-0.9,1.95,1.35,1.7,113],
+    [2.85,3.15,0.8,1.55,1.05,1.4,127],
+    [-3.35,2.55,-1.0,1.2,0.9,1.45,131]
+  ].forEach((v, i) => addVoxelBlob(micro, {
+    x:v[0], y:v[1], z:v[2], rx:v[3], ry:v[4], rz:v[5],
+    cell: 0.18, material: i % 3 === 0 ? MAT.stoneLight : (i % 3 === 1 ? MAT.stoneDark : MAT.stone),
+    seed:v[6], roughness:0.48
+  }));
+
+  // Broken shelf blocks intentionally alter the silhouette rather than only the surface.
+  for (let i = 0; i < 16; i++) {
+    const side = i % 2 ? -1 : 1;
+    const px = side * (3.0 + (i % 4) * 0.42);
+    const py = 1.0 + (i % 5) * 0.62;
+    const pz = -2.2 + (i % 6) * 0.72;
+    micro.add(box(0.42, 0.34, 0.5, i % 3 ? MAT.stone : MAT.stoneLight, px, py, pz));
+  }
 
   root.add(near, micro);
   scene.add(root);
@@ -328,8 +480,12 @@ function updateLocalDetail() {
     }
 
     const limit = nearest ? 17 * nearest.scale : 0;
+    treeDetailTargets.forEach(target => {
+      if (target.base) target.base.visible = target !== nearest || nearestD >= limit;
+    });
     treeDetailProxy.root.visible = !!nearest && nearestD < limit;
     if (treeDetailProxy.root.visible) {
+      if (nearest.base) nearest.base.visible = false;
       treeDetailProxy.root.position.copy(nearest.position);
       treeDetailProxy.root.scale.setScalar(nearest.scale);
       const microRange = lensOwned && lensActive ? 6.5 * nearest.scale : 3.2 * nearest.scale;
@@ -349,8 +505,12 @@ function updateLocalDetail() {
       }
     }
 
+    hillDetailTargets.forEach(target => {
+      if (target.base) target.base.visible = target !== nearest || nearestD >= 24;
+    });
     hillDetailProxy.root.visible = !!nearest && nearestD < 24;
     if (hillDetailProxy.root.visible) {
+      if (nearest.base) nearest.base.visible = false;
       hillDetailProxy.root.position.copy(nearest.position);
       hillDetailProxy.root.scale.set(
         nearest.width / 10,
@@ -427,7 +587,8 @@ function addHill(x, z, width, height) {
   hillDetailTargets.push({
     position: new THREE.Vector3(x, Math.max(0.2, height * 0.12), z),
     width,
-    height
+    height,
+    base: g
   });
 }
 
@@ -440,7 +601,8 @@ function addTree(x, z, scale = 1) {
   scene.add(g);
   treeDetailTargets.push({
     position: new THREE.Vector3(x, 0, z),
-    scale
+    scale,
+    base: g
   });
 }
 
@@ -499,6 +661,17 @@ function makeTower() {
   near.add(box(2, 12, 2, MAT.black, -1.3, 39, 0));
   near.add(box(1.1, 1.1, 1.1, MAT.glow, -1.3, 46, 0));
 
+  // LOD1 changes the tower outline: buttresses, cornices and broken side masses emerge.
+  for (const side of [-1, 1]) {
+    near.add(box(1.15, 8.5, 2.1, MAT.stoneDark, side * 7.1, 4.3, 0.8));
+    near.add(box(1.45, 4.0, 1.65, MAT.stone, side * 6.55, 11.5, -3.7));
+    near.add(box(1.1, 5.4, 1.2, MAT.stoneLight, side * 5.2, 17.4, 4.9));
+  }
+  near.add(box(15.3, 0.75, 15.0, MAT.stoneLight, 0, 8.7, 0));
+  near.add(box(12.0, 0.62, 12.1, MAT.stone, 0, 16.4, 0));
+  near.add(box(3.1, 2.2, 2.3, MAT.black, 4.1, 34.5, -1.7));
+  near.add(box(2.0, 3.0, 1.8, MAT.black, -4.0, 35.3, 1.8));
+
   // LOD1: fine surface voxels appear on the lower facade as the player approaches.
   // Instancing keeps this dense layer cheap enough for mobile.
   addVoxelPanel(near, {
@@ -512,6 +685,23 @@ function makeTower() {
   addLevel(root, 1, near);
 
   const micro = near.clone();
+
+  // LOD0 changes the outline again with smaller battlements, ribs and antenna-like ruins.
+  for (let i = 0; i < 18; i++) {
+    const angle = i / 18 * Math.PI * 2;
+    const r = i % 2 ? 5.25 : 5.65;
+    const h = 0.55 + (i % 4) * 0.22;
+    micro.add(box(0.42, h, 0.42, i % 3 ? MAT.stoneLight : MAT.stone,
+      Math.cos(angle) * r, 26.8 + h * 0.5, Math.sin(angle) * r));
+  }
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 6; i++) {
+      micro.add(box(0.34, 0.9 + i * 0.1, 0.42, MAT.stoneLight,
+        side * (6.3 + i * 0.18), 10.2 + i * 1.2, 5.2 - i * 0.38));
+    }
+  }
+  micro.add(box(0.55, 5.8, 0.55, MAT.black, 2.2, 42.0, -0.8));
+  micro.add(box(0.38, 3.8, 0.38, MAT.black, 3.0, 44.2, -0.4));
 
   // LOD0: the door surround resolves into thousands of tiny voxels.
   addVoxelPanel(micro, {
@@ -599,6 +789,9 @@ function makeFallenTree() {
   for (let i = -7; i < 7; i++) {
     near.add(box(0.22, 0.08, 1.54, MAT.woodLight, i * 0.52, 1.72, 0));
   }
+
+  addVoxelBranch(near, { length: 2.1, cell: 0.13, material: MAT.wood, start:[1.4,1.18,0], direction:[0.36,0.48,0.8], taper:0.9, seed:143 });
+  addVoxelBranch(near, { length: 1.65, cell: 0.12, material: MAT.wood, start:[-1.8,1.08,0], direction:[-0.3,0.5,-0.82], taper:0.92, seed:149 });
   addVoxelPanel(near, {
     width: 6.9, height: 1.16, cell: 0.095, depth: 0.065,
     x: -0.4, y: 1.12, z: 0.78, material: MAT.woodLight, seed: 7
@@ -606,6 +799,8 @@ function makeFallenTree() {
   addLevel(root, 1, near);
 
   const micro = near.clone();
+  addVoxelBranch(micro, { length: 1.35, cell: 0.048, material: MAT.woodLight, start:[2.45,1.58,0.55], direction:[0.6,0.5,0.55], taper:0.96, seed:151 });
+  addVoxelBranch(micro, { length: 1.1, cell: 0.045, material: MAT.woodLight, start:[-2.55,1.42,-0.45], direction:[-0.65,0.46,-0.52], taper:0.96, seed:157 });
   addVoxelPanel(micro, {
     width: 2.9, height: 0.9, cell: 0.028, depth: 0.024,
     x: -0.72, y: 1.47, z: 0.84, material: MAT.woodLight, seed: 17
