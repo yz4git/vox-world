@@ -30,6 +30,9 @@ jobs:
         with:
           enablement: true
 
+      - name: Check JavaScript syntax
+        run: node --check main.js
+
       - name: Prepare static artifact
         shell: bash
         run: |
