@@ -57,7 +57,8 @@ scene.add(sun);
 
 const clock = new THREE.Clock();
 const player = new THREE.Vector3(0, 1.68, 24);
-let yaw = Math.PI;
+// Three.js cameras face -Z at yaw=0. Start facing the observation tower.
+let yaw = 0;
 let pitch = -0.035;
 let started = false;
 let modalOpen = false;
@@ -84,7 +85,12 @@ const state = {
 
 const interactables = [];
 const lodObjects = [];
+const treeDetailTargets = [];
+const hillDetailTargets = [];
 let nearestInteractable = null;
+let groundDetail = null;
+let treeDetailProxy = null;
+let hillDetailProxy = null;
 
 const MAT = {
   grass: new THREE.MeshLambertMaterial({ color: 0x71965b }),
@@ -185,6 +191,179 @@ function addMicroGlyph(parent, x, y, z, material = MAT.glow, scale = 1) {
   }
 }
 
+function addVoxelBoxShell(parent, {
+  width,
+  height,
+  depth,
+  cell,
+  material,
+  x = 0,
+  y = 0,
+  z = 0,
+  seed = 0,
+  top = true
+}) {
+  const skin = Math.max(cell * 0.62, 0.012);
+  addVoxelPanel(parent, { width, height, cell, depth: skin, x, y, z: z + depth * 0.5, material, axis: "z", seed: seed + 1 });
+  addVoxelPanel(parent, { width, height, cell, depth: skin, x, y, z: z - depth * 0.5, material, axis: "z", seed: seed + 2 });
+  addVoxelPanel(parent, { width: depth, height, cell, depth: skin, x: x + width * 0.5, y, z, material, axis: "x", seed: seed + 3 });
+  addVoxelPanel(parent, { width: depth, height, cell, depth: skin, x: x - width * 0.5, y, z, material, axis: "x", seed: seed + 4 });
+  if (top) {
+    addVoxelPanel(parent, { width, height: depth, cell, depth: skin, x, y: y + height * 0.5, z, material, axis: "y", seed: seed + 5 });
+  }
+}
+
+function createGroundDetail() {
+  const root = new THREE.Group();
+  root.renderOrder = 3;
+
+  const near = new THREE.Group();
+  addVoxelPanel(near, {
+    width: 9.0, height: 9.0, cell: 0.14, depth: 0.055,
+    y: 0.015, material: MAT.grass2, axis: "y", seed: 23
+  });
+
+  const micro = new THREE.Group();
+  addVoxelPanel(micro, {
+    width: 3.2, height: 3.2, cell: 0.038, depth: 0.025,
+    y: 0.052, material: MAT.grass2, axis: "y", seed: 29
+  });
+  addVoxelPanel(micro, {
+    width: 1.75, height: 1.75, cell: 0.021, depth: 0.017,
+    y: 0.078, material: MAT.earth, axis: "y", seed: 31
+  });
+
+  root.add(near, micro);
+  scene.add(root);
+  return { root, near, micro };
+}
+
+function createTreeDetailProxy() {
+  const root = new THREE.Group();
+  root.visible = false;
+
+  const near = new THREE.Group();
+  addVoxelBoxShell(near, {
+    width: 0.84, height: 4.0, depth: 0.84, cell: 0.075,
+    material: MAT.woodLight, y: 2.0, seed: 41
+  });
+  addVoxelBoxShell(near, {
+    width: 4.2, height: 2.2, depth: 3.6, cell: 0.16,
+    material: MAT.grass2, y: 4.4, seed: 43
+  });
+  addVoxelBoxShell(near, {
+    width: 2.7, height: 2.1, depth: 4.5, cell: 0.15,
+    material: MAT.grass, x: 0.8, y: 5.2, seed: 47
+  });
+
+  const micro = new THREE.Group();
+  addVoxelBoxShell(micro, {
+    width: 0.86, height: 4.0, depth: 0.86, cell: 0.026,
+    material: MAT.woodLight, y: 2.0, seed: 53
+  });
+  addVoxelBoxShell(micro, {
+    width: 4.22, height: 2.22, depth: 3.62, cell: 0.065,
+    material: MAT.grass2, y: 4.4, seed: 59
+  });
+  addVoxelBoxShell(micro, {
+    width: 2.72, height: 2.12, depth: 4.52, cell: 0.06,
+    material: MAT.grass, x: 0.8, y: 5.2, seed: 61
+  });
+
+  // Bark fissures become individually readable only at arm's length.
+  for (let i = 0; i < 42; i++) {
+    const yy = 0.35 + (i % 14) * 0.245;
+    const xx = -0.36 + Math.floor(i / 14) * 0.36;
+    micro.add(box(0.018, 0.12, 0.015, MAT.black, xx, yy, 0.438));
+  }
+
+  root.add(near, micro);
+  scene.add(root);
+  return { root, near, micro };
+}
+
+function createHillDetailProxy() {
+  const root = new THREE.Group();
+  root.visible = false;
+
+  const near = new THREE.Group();
+  addVoxelBoxShell(near, {
+    width: 10, height: 5.0, depth: 8.2, cell: 0.18,
+    material: MAT.stoneLight, y: 2.5, seed: 67
+  });
+
+  const micro = new THREE.Group();
+  addVoxelBoxShell(micro, {
+    width: 10, height: 5.0, depth: 8.2, cell: 0.055,
+    material: MAT.stoneLight, y: 2.5, seed: 71
+  });
+
+  root.add(near, micro);
+  scene.add(root);
+  return { root, near, micro };
+}
+
+function updateLocalDetail() {
+  if (groundDetail) {
+    // Snap the patch so detail feels anchored to the world instead of sliding underfoot.
+    const snap = 0.35;
+    groundDetail.root.position.set(
+      Math.round(player.x / snap) * snap,
+      0,
+      Math.round(player.z / snap) * snap
+    );
+    groundDetail.near.visible = true;
+    groundDetail.micro.visible = true;
+  }
+
+  if (treeDetailProxy && treeDetailTargets.length) {
+    let nearest = null;
+    let nearestD = Infinity;
+    for (const target of treeDetailTargets) {
+      const d = player.distanceTo(target.position);
+      if (d < nearestD) {
+        nearestD = d;
+        nearest = target;
+      }
+    }
+
+    const limit = nearest ? 17 * nearest.scale : 0;
+    treeDetailProxy.root.visible = !!nearest && nearestD < limit;
+    if (treeDetailProxy.root.visible) {
+      treeDetailProxy.root.position.copy(nearest.position);
+      treeDetailProxy.root.scale.setScalar(nearest.scale);
+      const microRange = lensOwned && lensActive ? 6.5 * nearest.scale : 3.2 * nearest.scale;
+      treeDetailProxy.near.visible = nearestD >= microRange;
+      treeDetailProxy.micro.visible = nearestD < microRange;
+    }
+  }
+
+  if (hillDetailProxy && hillDetailTargets.length) {
+    let nearest = null;
+    let nearestD = Infinity;
+    for (const target of hillDetailTargets) {
+      const d = player.distanceTo(target.position);
+      if (d < nearestD) {
+        nearestD = d;
+        nearest = target;
+      }
+    }
+
+    hillDetailProxy.root.visible = !!nearest && nearestD < 24;
+    if (hillDetailProxy.root.visible) {
+      hillDetailProxy.root.position.copy(nearest.position);
+      hillDetailProxy.root.scale.set(
+        nearest.width / 10,
+        Math.max(0.7, nearest.height / 8),
+        nearest.width * 0.82 / 8.2
+      );
+      const microRange = lensOwned && lensActive ? 7.5 : 3.6;
+      hillDetailProxy.near.visible = nearestD >= microRange;
+      hillDetailProxy.micro.visible = nearestD < microRange;
+    }
+  }
+}
+
 function addGround() {
   const ground = box(220, 1, 240, MAT.grass, 0, -0.55, -70);
   ground.receiveShadow = true;
@@ -245,6 +424,11 @@ function addHill(x, z, width, height) {
   }
   g.position.set(x, 0, z);
   scene.add(g);
+  hillDetailTargets.push({
+    position: new THREE.Vector3(x, Math.max(0.2, height * 0.12), z),
+    width,
+    height
+  });
 }
 
 function addTree(x, z, scale = 1) {
@@ -254,6 +438,10 @@ function addTree(x, z, scale = 1) {
   g.add(box(2.7 * scale, 2.1 * scale, 4.5 * scale, MAT.grass, 0.8 * scale, 5.2 * scale, 0));
   g.position.set(x, 0, z);
   scene.add(g);
+  treeDetailTargets.push({
+    position: new THREE.Vector3(x, 0, z),
+    scale
+  });
 }
 
 function createLODLandmark(position) {
@@ -314,11 +502,11 @@ function makeTower() {
   // LOD1: fine surface voxels appear on the lower facade as the player approaches.
   // Instancing keeps this dense layer cheap enough for mobile.
   addVoxelPanel(near, {
-    width: 9.6, height: 7.0, cell: 0.22, depth: 0.16,
+    width: 9.6, height: 7.0, cell: 0.12, depth: 0.085,
     x: 0, y: 4.0, z: 6.96, material: MAT.stoneLight, seed: 2
   });
   addVoxelPanel(near, {
-    width: 7.4, height: 5.0, cell: 0.18, depth: 0.13,
+    width: 7.4, height: 5.0, cell: 0.105, depth: 0.075,
     x: 0, y: 11.0, z: 5.58, material: MAT.stone, seed: 5
   });
   addLevel(root, 1, near);
@@ -327,11 +515,11 @@ function makeTower() {
 
   // LOD0: the door surround resolves into thousands of tiny voxels.
   addVoxelPanel(micro, {
-    width: 5.8, height: 6.0, cell: 0.065, depth: 0.052,
+    width: 5.8, height: 6.0, cell: 0.032, depth: 0.025,
     x: 0, y: 3.4, z: 7.16, material: MAT.stoneLight, seed: 11
   });
   addVoxelPanel(micro, {
-    width: 4.7, height: 1.15, cell: 0.045, depth: 0.04,
+    width: 4.7, height: 1.15, cell: 0.024, depth: 0.019,
     x: 0, y: 6.75, z: 7.22, material: MAT.gold, seed: 19
   });
   for (let i = -5; i <= 5; i++) {
@@ -798,6 +986,10 @@ makeStatue();
 makeSpring();
 makeTower();
 
+groundDetail = createGroundDetail();
+treeDetailProxy = createTreeDetailProxy();
+hillDetailProxy = createHillDetailProxy();
+
 const keyLight = new THREE.PointLight(0x87dfff, 2.8, 22, 2);
 keyLight.position.set(0, 6, -64);
 scene.add(keyLight);
@@ -827,8 +1019,11 @@ function updateMovement(dt) {
   const speed = keys.has("ShiftLeft") ? 8.0 : 5.1;
   const sin = Math.sin(yaw);
   const cos = Math.cos(yaw);
-  const dx = (sin * forward + cos * right) * speed * dt;
-  const dz = (cos * forward - sin * right) * speed * dt;
+
+  // Match movement to the camera's actual forward direction.
+  // At yaw=0 the camera looks toward -Z, so W/↑ must reduce Z.
+  const dx = (-sin * forward + cos * right) * speed * dt;
+  const dz = (-cos * forward - sin * right) * speed * dt;
 
   player.x += dx;
   player.z += dz;
@@ -846,6 +1041,7 @@ function animate() {
   updateMovement(dt);
   updateCamera();
   updateWorldLOD();
+  updateLocalDetail();
   updateNearestInteractable();
 
   if (toastTimer > 0) {
