@@ -473,6 +473,39 @@ function createGroundDetail() {
   };
 }
 
+function distanceToSegment2D(px, pz, ax, az, bx, bz) {
+  const abx = bx - ax;
+  const abz = bz - az;
+  const apx = px - ax;
+  const apz = pz - az;
+  const len2 = abx * abx + abz * abz;
+  if (len2 <= 0.000001) return Math.hypot(apx, apz);
+  const t = THREE.MathUtils.clamp((apx * abx + apz * abz) / len2, 0, 1);
+  const qx = ax + abx * t;
+  const qz = az + abz * t;
+  return Math.hypot(px - qx, pz - qz);
+}
+
+function isTrailClearance(wx, wz, padding = 0) {
+  // Main road follows the exact same sine path used when placing the road plates.
+  if (wz <= 20 && wz >= -74) {
+    const pathIndex = (18 - wz) / 4.1;
+    const centerX = Math.sin(pathIndex * 0.6) * 2.5;
+    if (Math.abs(wx - centerX) <= 2.55 + padding) return true;
+  }
+
+  const branches = [
+    [-0.5, -10.5, -7.2, -17.0],
+    [0.8, -27.0, 9.0, -33.0],
+    [-0.4, -42.5, -6.0, -48.0]
+  ];
+  for (const [ax, az, bx, bz] of branches) {
+    if (distanceToSegment2D(wx, wz, ax, az, bx, bz) <= 1.75 + padding) return true;
+  }
+
+  return false;
+}
+
 function updateGroundDetail(detail) {
   const nearAX = Math.floor(player.x / detail.nearCell);
   const nearAZ = Math.floor(player.z / detail.nearCell);
@@ -494,8 +527,9 @@ function updateGroundDetail(detail) {
       const dz = wz - player.z;
       const d = Math.hypot(dx, dz);
 
-      // Leave a clean hole for the finer central clipmap.
-      tile.visible = d > 3.15;
+      // Leave a clean hole for the finer central clipmap and never cover trails.
+      tile.userData.trailBlocked = isTrailClearance(wx, wz, detail.nearCell * 0.58);
+      tile.visible = d > 3.15 && !tile.userData.trailBlocked;
       const style = groundCellStyle(gx, gz, 0);
       tile.material = style.material;
       tile.scale.y = style.height / 0.16;
@@ -505,7 +539,7 @@ function updateGroundDetail(detail) {
     // Visibility ring follows the player, but geometry remains locked to world coordinates.
     for (const tile of detail.nearTiles) {
       const d = Math.hypot(tile.position.x - player.x, tile.position.z - player.z);
-      tile.visible = d > 3.15;
+      tile.visible = d > 3.15 && !tile.userData.trailBlocked;
     }
   }
 
@@ -520,8 +554,9 @@ function updateGroundDetail(detail) {
       const wz = gz * detail.microCell;
       const d = Math.hypot(wx - player.x, wz - player.z);
 
-      // Central patch only. No infinite high-frequency carpet.
-      tile.visible = d <= 3.65;
+      // Central patch only. Keep the authored road surface completely unobstructed.
+      tile.userData.trailBlocked = isTrailClearance(wx, wz, detail.microCell * 0.7);
+      tile.visible = d <= 3.65 && !tile.userData.trailBlocked;
       const style = groundCellStyle(Math.floor(gx / 2), Math.floor(gz / 2), 1);
       tile.material = style.material;
       tile.scale.y = style.height / 0.13;
@@ -530,7 +565,7 @@ function updateGroundDetail(detail) {
   } else {
     for (const tile of detail.microTiles) {
       const d = Math.hypot(tile.position.x - player.x, tile.position.z - player.z);
-      tile.visible = d <= 3.65;
+      tile.visible = d <= 3.65 && !tile.userData.trailBlocked;
     }
   }
 }
