@@ -83,6 +83,8 @@ const state = {
   lensCollected: false
 };
 
+const proximityHints = new Set();
+
 const interactables = [];
 const lodObjects = [];
 const treeDetailTargets = [];
@@ -668,6 +670,78 @@ function updateLocalDetail() {
   }
 }
 
+function addTrailBranch(x0, z0, x1, z1, steps = 6) {
+  const mat = new THREE.MeshLambertMaterial({ color: 0x8b7a60 });
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const x = THREE.MathUtils.lerp(x0, x1, t);
+    const z = THREE.MathUtils.lerp(z0, z1, t);
+    const p = box(
+      2.6 + (i % 2) * 0.45,
+      0.13,
+      2.15 + ((i + 1) % 2) * 0.4,
+      mat,
+      x,
+      0.075,
+      z
+    );
+    p.rotation.y = Math.atan2(x1 - x0, z1 - z0) * -0.16 + Math.sin(i * 1.7) * 0.08;
+    scene.add(p);
+  }
+}
+
+function addTraceMarker(x, z, accent = MAT.gold) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  g.add(box(1.1, 0.48, 1.0, MAT.stoneDark, 0, 0.24, 0));
+  g.add(box(0.78, 0.42, 0.72, MAT.stoneMid, 0.08, 0.67, -0.04));
+  g.add(box(0.46, 0.36, 0.44, MAT.stoneLight, -0.04, 1.05, 0.02));
+  g.add(box(0.19, 0.19, 0.19, accent, 0, 1.38, 0.02));
+  scene.add(g);
+}
+
+function updateProximityHints() {
+  if (!started || modalOpen) return;
+
+  const hints = [
+    {
+      id: "tree",
+      done: state.treeBasic,
+      position: new THREE.Vector3(-8.5, 1.2, -18),
+      radius: 13.5,
+      text: "左手の脇道。倒木の表面に不自然な傷が見える。"
+    },
+    {
+      id: "statue",
+      done: state.statueBasic,
+      position: new THREE.Vector3(10.5, 1.6, -34),
+      radius: 14.0,
+      text: "右手の石像。伸ばした手の先に何か刻まれている。"
+    },
+    {
+      id: "spring",
+      done: state.springBasic,
+      position: new THREE.Vector3(-7, 0.8, -49),
+      radius: 12.5,
+      text: "左手に干上がった泉。中央だけ形が違って見える。"
+    }
+  ];
+
+  for (const hint of hints) {
+    if (hint.done || proximityHints.has(hint.id)) continue;
+    if (player.distanceTo(hint.position) <= hint.radius) {
+      proximityHints.add(hint.id);
+      showToast("OBSERVATION TRACE\n" + hint.text, 2.7);
+      break;
+    }
+  }
+
+  if (!towerDoorSeen && !proximityHints.has("tower") && player.distanceTo(towerPos) < 13.5) {
+    proximityHints.add("tower");
+    showToast("OBSERVATION TOWER\n正面に封印扉。右側には小さな別棟がある。", 3.0);
+  }
+}
+
 function addGround() {
   const ground = box(220, 1, 240, MAT.grass, 0, -0.55, -70);
   ground.receiveShadow = true;
@@ -703,6 +777,14 @@ function addGround() {
     p.rotation.y = Math.sin(i) * 0.13;
     scene.add(p);
   }
+
+  // Short side trails make optional observations discoverable without turning them into waypoints.
+  addTrailBranch(-0.5, -10.5, -7.2, -17.0, 5);
+  addTrailBranch(0.8, -27.0, 9.0, -33.0, 6);
+  addTrailBranch(-0.4, -42.5, -6.0, -48.0, 5);
+  addTraceMarker(-6.4, -16.2, MAT.gold);
+  addTraceMarker(8.1, -32.1, MAT.gold);
+  addTraceMarker(-5.1, -47.2, MAT.glow);
 
   addHill(-48, -102, 26, 16);
   addHill(42, -118, 34, 22);
@@ -1258,8 +1340,8 @@ function updateObjective() {
   if (doorOpened) return;
   if (!lensOwned && !towerDoorSeen) {
     objectiveEl.textContent = basicCount === 0
-      ? "白草の丘から、遠くに見える黒い観測塔へ向かう"
-      : "観測塔へ向かいながら、気になる痕跡を調べる · " + basicCount + "/3";
+      ? "道標をたどって観測塔へ。脇道にある3つの観測痕跡も調べる"
+      : "観測塔へ向かいながら、脇道の観測痕跡を調べる · " + basicCount + "/3";
     return;
   }
   if (!lensOwned) {
@@ -1274,11 +1356,21 @@ function updateObjective() {
 }
 
 function updateLOD(root, distance) {
-  let level = 3;
-  if (distance <= 80) level = 2;
-  if (distance <= 24) level = 1;
-  if (distance <= 2.8) level = 0;
-  if (lensActive && lensOwned && distance <= 6.0) level = 0;
+  let level = root.userData.currentLod ?? 3;
+  const lensMicro = lensActive && lensOwned;
+  const microEnter = lensMicro ? 5.6 : 2.55;
+  const microExit = lensMicro ? 6.6 : 3.25;
+
+  if (level === 3 && distance < 76) level = 2;
+  else if (level === 2 && distance > 84) level = 3;
+
+  if (level === 2 && distance < 22) level = 1;
+  else if (level === 1 && distance > 27) level = 2;
+
+  if (level === 1 && distance < microEnter) level = 0;
+  else if (level === 0 && distance > microExit) level = 1;
+
+  root.userData.currentLod = level;
   for (const child of root.userData.levels) {
     child.visible = child.userData.lodLevel === level;
   }
@@ -1289,7 +1381,7 @@ function updateWorldLOD() {
   previousLod = lodLevel;
   lodLevel = d > 80 ? 3 : d > 24 ? 2 : d > 2.8 ? 1 : 0;
   const names = ["LOD0 · EXTREME CLOSE", "LOD1 · NEAR", "LOD2 · MID", "LOD3 · FAR"];
-  lodBadge.textContent = names[lodLevel];
+  lodBadge.textContent = "TOWER · " + names[lodLevel];
   if (previousLod !== lodLevel) {
     lodBadge.classList.remove("lodFlash");
     void lodBadge.offsetWidth;
@@ -1345,7 +1437,7 @@ function addGuideStone() {
     label: "岩の刻印を見る",
     position: new THREE.Vector3(1.8, 1.3, 12),
     radius: 3.1,
-    action: () => showJournal("道標の岩", "近づくと、粗い岩肌の中から小さな矢印が現れた。矢印は遠くの黒い観測塔を指している。遠くでは見えなかった情報だ。")
+    action: () => showJournal("道標の岩", "近づくと、粗い岩肌の中から小さな矢印が現れた。矢印は黒い観測塔を指している。道の途中には低い積み石があり、その先に観察できそうな脇道が続いている。")
   });
 }
 
@@ -1412,6 +1504,7 @@ function animate() {
   updateCamera();
   updateWorldLOD();
   updateLocalDetail();
+  updateProximityHints();
   updateNearestInteractable();
 
   if (toastTimer > 0) {
@@ -1431,7 +1524,7 @@ startButton.addEventListener("click", () => {
   started = true;
   startScreen.classList.add("hidden");
   hud.classList.remove("hidden");
-  showToast("近づくほど、世界は細かくなる。", 2.7);
+  showToast("塔へ向かう道を進み、脇道の観測痕跡を調べる。\n近づくほど世界の形が増えていく。", 3.6);
 });
 
 window.addEventListener("keydown", e => {
