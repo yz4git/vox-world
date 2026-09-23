@@ -397,45 +397,142 @@ function addRootFlare(parent, {
   });
 }
 
+function groundCellStyle(gx, gz, detail = 0) {
+  // Low-frequency world-space pattern: broad material regions, not per-cell noise.
+  const regionX = Math.floor(gx / (detail ? 5 : 3));
+  const regionZ = Math.floor(gz / (detail ? 5 : 3));
+  const wave = Math.sin(regionX * 1.37 + regionZ * 0.91) + Math.cos(regionZ * 1.11 - regionX * 0.63);
+
+  let material = MAT.grass;
+  if (wave > 1.0) material = MAT.grass2;
+  else if (wave < -1.15) material = MAT.grassDark;
+  else if ((regionX + regionZ) % 7 === 0) material = MAT.moss;
+
+  // Heights change only by broad shelves. Close LOD gets more shape,
+  // but never centimeter-scale roughness.
+  const shelf = ((regionX * 3 + regionZ * 5) % 5 + 5) % 5;
+  const height = detail
+    ? 0.10 + (shelf === 0 ? 0.10 : shelf === 3 ? 0.05 : 0)
+    : 0.11 + (shelf === 0 ? 0.12 : shelf === 3 ? 0.06 : 0);
+
+  const soil = ((regionX * 11 + regionZ * 7) % 17 + 17) % 17 === 0;
+  if (soil) material = detail ? MAT.earth : MAT.earthDark;
+
+  return { material, height };
+}
+
 function createGroundDetail() {
   const root = new THREE.Group();
   root.renderOrder = 2;
 
   const near = new THREE.Group();
-  const terrace = 1.45;
-  for (let iz = -3; iz <= 3; iz++) {
-    for (let ix = -3; ix <= 3; ix++) {
-      const band = (Math.floor((ix + 8) / 3) + Math.floor((iz + 8) / 2)) % 4;
-      const mat = [MAT.grassDark, MAT.grass, MAT.grass2, MAT.grass][band];
-      const h = ((ix + iz * 2) % 4 === 0) ? 0.14 : 0.06;
-      near.add(box(
-        terrace * 0.98,
-        0.12 + h,
-        terrace * 0.98,
-        mat,
-        ix * terrace,
-        0.02 + h * 0.5,
-        iz * terrace
-      ));
+  const micro = new THREE.Group();
+
+  const nearCell = 1.5;
+  const microCell = 0.75;
+  const nearRadius = 5;
+  const microRadius = 4;
+  const nearTiles = [];
+  const microTiles = [];
+
+  for (let oz = -nearRadius; oz <= nearRadius; oz++) {
+    for (let ox = -nearRadius; ox <= nearRadius; ox++) {
+      const tile = box(nearCell * 0.985, 0.16, nearCell * 0.985, MAT.grass);
+      tile.userData.offsetX = ox;
+      tile.userData.offsetZ = oz;
+      near.add(tile);
+      nearTiles.push(tile);
     }
   }
 
-  // Close-range ground detail is still macro: exposed soil shelves and a few mossy caps.
-  const micro = new THREE.Group();
-  const patches = [
-    [-2.6,-1.8,2.6,1.4,MAT.earth],
-    [2.1,1.4,2.2,1.25,MAT.earthDark],
-    [-0.4,2.5,1.8,1.0,MAT.grassLight],
-    [3.0,-2.4,1.7,1.3,MAT.moss],
-    [-3.1,2.1,1.55,1.15,MAT.earthLight]
-  ];
-  patches.forEach((p, i) => {
-    micro.add(box(p[2], 0.12 + i * 0.018, p[3], p[4], p[0], 0.15 + i * 0.01, p[1]));
-  });
+  for (let oz = -microRadius; oz <= microRadius; oz++) {
+    for (let ox = -microRadius; ox <= microRadius; ox++) {
+      const tile = box(microCell * 0.985, 0.13, microCell * 0.985, MAT.grass2);
+      tile.userData.offsetX = ox;
+      tile.userData.offsetZ = oz;
+      micro.add(tile);
+      microTiles.push(tile);
+    }
+  }
 
   root.add(near, micro);
   scene.add(root);
-  return { root, near, micro };
+
+  return {
+    root,
+    near,
+    micro,
+    nearTiles,
+    microTiles,
+    nearCell,
+    microCell,
+    nearAnchorX: Number.NaN,
+    nearAnchorZ: Number.NaN,
+    microAnchorX: Number.NaN,
+    microAnchorZ: Number.NaN
+  };
+}
+
+function updateGroundDetail(detail) {
+  const nearAX = Math.floor(player.x / detail.nearCell);
+  const nearAZ = Math.floor(player.z / detail.nearCell);
+  const microAX = Math.floor(player.x / detail.microCell);
+  const microAZ = Math.floor(player.z / detail.microCell);
+
+  // Reposition only when crossing a world-aligned cell boundary.
+  // Tiles always land on the same world coordinates, so the texture never slides.
+  if (nearAX !== detail.nearAnchorX || nearAZ !== detail.nearAnchorZ) {
+    detail.nearAnchorX = nearAX;
+    detail.nearAnchorZ = nearAZ;
+
+    for (const tile of detail.nearTiles) {
+      const gx = nearAX + tile.userData.offsetX;
+      const gz = nearAZ + tile.userData.offsetZ;
+      const wx = gx * detail.nearCell;
+      const wz = gz * detail.nearCell;
+      const dx = wx - player.x;
+      const dz = wz - player.z;
+      const d = Math.hypot(dx, dz);
+
+      // Leave a clean hole for the finer central clipmap.
+      tile.visible = d > 3.15;
+      const style = groundCellStyle(gx, gz, 0);
+      tile.material = style.material;
+      tile.scale.y = style.height / 0.16;
+      tile.position.set(wx, 0.035 + style.height * 0.5, wz);
+    }
+  } else {
+    // Visibility ring follows the player, but geometry remains locked to world coordinates.
+    for (const tile of detail.nearTiles) {
+      const d = Math.hypot(tile.position.x - player.x, tile.position.z - player.z);
+      tile.visible = d > 3.15;
+    }
+  }
+
+  if (microAX !== detail.microAnchorX || microAZ !== detail.microAnchorZ) {
+    detail.microAnchorX = microAX;
+    detail.microAnchorZ = microAZ;
+
+    for (const tile of detail.microTiles) {
+      const gx = microAX + tile.userData.offsetX;
+      const gz = microAZ + tile.userData.offsetZ;
+      const wx = gx * detail.microCell;
+      const wz = gz * detail.microCell;
+      const d = Math.hypot(wx - player.x, wz - player.z);
+
+      // Central patch only. No infinite high-frequency carpet.
+      tile.visible = d <= 3.65;
+      const style = groundCellStyle(Math.floor(gx / 2), Math.floor(gz / 2), 1);
+      tile.material = style.material;
+      tile.scale.y = style.height / 0.13;
+      tile.position.set(wx, 0.055 + style.height * 0.5, wz);
+    }
+  } else {
+    for (const tile of detail.microTiles) {
+      const d = Math.hypot(tile.position.x - player.x, tile.position.z - player.z);
+      tile.visible = d <= 3.65;
+    }
+  }
 }
 
 function createTreeDetailProxy() {
@@ -593,14 +690,7 @@ function createHillDetailProxy() {
 
 function updateLocalDetail() {
   if (groundDetail) {
-    const snap = 0.35;
-    groundDetail.root.position.set(
-      Math.round(player.x / snap) * snap,
-      0,
-      Math.round(player.z / snap) * snap
-    );
-    groundDetail.near.visible = true;
-    groundDetail.micro.visible = true;
+    updateGroundDetail(groundDetail);
   }
 
   if (treeDetailProxy && treeDetailTargets.length) {
